@@ -69,7 +69,7 @@ export function ClientPortal() {
         <Card className="mb-6">
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle className="text-xl">Service Details</CardTitle>
+              <CardTitle className="text-lg sm:text-xl">Service Details</CardTitle>
               <Badge
                 className={
                   jobStatus === "confirmed"
@@ -86,7 +86,7 @@ export function ClientPortal() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-3">
                 <div>
                   <h3 className="font-semibold text-gray-900">{mockJobData.service}</h3>
@@ -124,15 +124,18 @@ export function ClientPortal() {
         {/* Action Buttons */}
         {jobStatus === "scheduled" && (
           <div className="space-y-4">
-            <Button onClick={handleConfirm} className="w-full bg-green-600 hover:bg-green-700 text-white py-3 text-lg">
-              <CheckCircle className="mr-2 h-5 w-5" />
+            <Button
+              onClick={handleConfirm}
+              className="w-full bg-green-600 hover:bg-green-700 text-white py-2 sm:py-3 text-base sm:text-lg"
+            >
+              <CheckCircle className="mr-2 h-4 sm:h-5 w-4 sm:w-5" />
               Confirm Appointment
             </Button>
 
-            <div className="grid md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Dialog open={isRescheduleOpen} onOpenChange={setIsRescheduleOpen}>
                 <DialogTrigger asChild>
-                  <Button variant="outline" className="w-full py-3">
+                  <Button variant="outline" className="w-full py-2 sm:py-3">
                     <RotateCcw className="mr-2 h-4 w-4" />
                     Need to Reschedule?
                   </Button>
@@ -172,7 +175,7 @@ export function ClientPortal() {
                       ))}
                     </div>
 
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
                       <Button variant="outline" onClick={() => setIsRescheduleOpen(false)} className="flex-1">
                         Cancel
                       </Button>
@@ -186,7 +189,7 @@ export function ClientPortal() {
 
               <Dialog open={isCancelOpen} onOpenChange={setIsCancelOpen}>
                 <DialogTrigger asChild>
-                  <Button variant="outline" className="w-full py-3 text-red-600 border-red-200 hover:bg-red-50">
+                  <Button variant="outline" className="w-full py-2 sm:py-3 text-red-600 border-red-200 hover:bg-red-50">
                     <X className="mr-2 h-4 w-4" />
                     Cancel Appointment
                   </Button>
@@ -210,7 +213,7 @@ export function ClientPortal() {
                       />
                     </div>
 
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
                       <Button variant="outline" onClick={() => setIsCancelOpen(false)} className="flex-1">
                         Keep Appointment
                       </Button>

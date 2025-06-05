@@ -91,7 +91,7 @@ export function WorkersPanel() {
         </div>
       </div>
 
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {mockWorkers.map((worker) => (
           <Card key={worker.id} className="hover:shadow-md transition-shadow">
             <CardHeader className="pb-3">
@@ -150,7 +150,7 @@ export function WorkersPanel() {
                     <DialogTitle>{worker.name} - Worker Details</DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="text-sm font-medium">Status</label>
                         <p className="text-sm text-gray-600">{worker.availability}</p>
@@ -175,7 +175,7 @@ export function WorkersPanel() {
                         ))}
                       </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <Button size="sm">View Schedule</Button>
                       <Button size="sm" variant="outline">
                         Edit Worker

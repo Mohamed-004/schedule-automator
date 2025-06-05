@@ -97,10 +97,10 @@ export function TodaysSchedule() {
       <div className="grid gap-4">
         {jobs.map((job) => (
           <Card key={job.id} className="hover:shadow-md transition-shadow">
-            <CardContent className="p-6">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-3">
+            <CardContent className="p-4 sm:p-6">
+              <div className="flex flex-col sm:flex-row items-start justify-between">
+                <div className="flex-1 w-full">
+                  <div className="flex flex-wrap items-center gap-2 mb-3">
                     <div className="flex items-center gap-2">
                       <Clock className="h-4 w-4 text-gray-500" />
                       <span className="font-semibold text-lg">{job.time}</span>
@@ -116,7 +116,7 @@ export function TodaysSchedule() {
                     )}
                   </div>
 
-                  <div className="grid md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <h3 className="font-semibold text-gray-900 mb-1">{job.client}</h3>
                       <p className="text-gray-600 mb-2">{job.service}</p>
@@ -138,7 +138,7 @@ export function TodaysSchedule() {
 
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon">
+                    <Button variant="ghost" size="icon" className="mt-2 sm:mt-0">
                       <MoreHorizontal className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>

@@ -59,9 +59,9 @@ export function CalendarView() {
         </div>
       </div>
 
-      <div className="grid grid-cols-7 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-7 gap-4">
         {weekDays.map((day) => (
-          <Card key={day} className="min-h-[400px]">
+          <Card key={day} className="min-h-[200px] md:min-h-[400px]">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-center">
                 {day}
@@ -102,7 +102,7 @@ export function CalendarView() {
                         <label className="text-sm font-medium">Time</label>
                         <p className="text-sm text-gray-600">{job.time}</p>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
                         <Button size="sm">Edit</Button>
                         <Button size="sm" variant="outline">
                           Reschedule
