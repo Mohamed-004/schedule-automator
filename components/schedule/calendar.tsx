@@ -9,7 +9,7 @@ interface CalendarProps {
   onSelectDate: (date: Date) => void
 }
 
-export function Calendar({ jobs, selectedDate, onSelectDate }: CalendarProps) {
+export default function Calendar({ jobs, selectedDate, onSelectDate }: CalendarProps) {
   const today = new Date()
   const currentMonth = selectedDate.getMonth()
   const currentYear = selectedDate.getFullYear()
@@ -32,11 +32,11 @@ export function Calendar({ jobs, selectedDate, onSelectDate }: CalendarProps) {
         week.push(null)
       } else {
         const date = new Date(currentYear, currentMonth, day)
-        const hasJobs = jobs.some(job => {
+        const jobsForDay = jobs.filter(job => {
           const jobDate = new Date(job.scheduled_at)
           return jobDate.toDateString() === date.toDateString()
         })
-        week.push({ date, hasJobs })
+        week.push({ date, jobsCount: jobsForDay.length })
         day++
       }
     }
@@ -54,7 +54,7 @@ export function Calendar({ jobs, selectedDate, onSelectDate }: CalendarProps) {
   }
 
   return (
-    <div className="w-full">
+    <div className="w-full max-w-4xl mx-auto">
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold">
           {selectedDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
@@ -77,11 +77,11 @@ export function Calendar({ jobs, selectedDate, onSelectDate }: CalendarProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-7 gap-1">
+      <div className="grid grid-cols-7 gap-1 sm:gap-2 text-xs sm:text-base">
         {days.map(day => (
           <div
             key={day}
-            className="text-center text-sm font-medium text-gray-500"
+            className="text-center font-medium text-gray-500"
           >
             {day}
           </div>
@@ -101,17 +101,32 @@ export function Calendar({ jobs, selectedDate, onSelectDate }: CalendarProps) {
                 key={`${weekIndex}-${dayIndex}`}
                 onClick={() => onSelectDate(day.date)}
                 className={cn(
-                  'relative h-10 rounded-md text-sm transition-colors',
+                  'relative flex flex-col items-center justify-center rounded-lg transition-colors',
+                  'h-10 w-10 md:h-12 md:w-12 lg:h-16 lg:w-16',
+                  day.jobsCount > 0 && !isSelected ? 'bg-primary/5' : '',
                   isSelected
-                    ? 'bg-primary text-primary-foreground'
+                    ? 'bg-primary text-primary-foreground shadow-lg'
                     : 'hover:bg-accent hover:text-accent-foreground',
                   isToday && !isSelected && 'border border-primary'
                 )}
+                aria-label={
+                  day.jobsCount > 0
+                    ? `${day.date.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}, ${day.jobsCount} job${day.jobsCount > 1 ? 's' : ''}`
+                    : day.date.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
+                }
+                title={day.jobsCount > 0 ? `${day.jobsCount} job${day.jobsCount > 1 ? 's' : ''}` : undefined}
               >
-                {day.date.getDate()}
-                {day.hasJobs && (
-                  <span className="absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-primary" />
+                {day.jobsCount > 0 && (
+                  <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex gap-0.5 items-center">
+                    {Array(Math.min(day.jobsCount, 3)).fill(0).map((_, i) => (
+                      <span key={i} className="inline-block h-1.5 w-1.5 rounded-full bg-primary"></span>
+                    ))}
+                    {day.jobsCount > 3 && (
+                      <span className="text-[10px] text-primary font-bold ml-0.5">+</span>
+                    )}
+                  </div>
                 )}
+                <span className="z-0">{day.date.getDate()}</span>
               </button>
             )
           })
@@ -120,3 +135,5 @@ export function Calendar({ jobs, selectedDate, onSelectDate }: CalendarProps) {
     </div>
   )
 } 
+ 
+ 

@@ -1,22 +1,47 @@
+'use client';
+
 import { useBusiness } from '@/hooks/use-business'
-import { BusinessForm } from '@/components/settings/business-form'
+import BusinessForm from '@/components/settings/business-form'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 export default function SettingsPage() {
-  const { business, loading } = useBusiness()
+  const { business, loading, error } = useBusiness()
 
   if (loading) {
-    return <div>Loading...</div>
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <p className="text-lg">Loading...</p>
+      </div>
+    )
+  }
+
+  if (error || !business) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <p className="text-lg text-red-500">Error loading business profile</p>
+      </div>
+    )
   }
 
   return (
-    <div className="p-6">
-      <h1 className="mb-6 text-2xl font-bold">Settings</h1>
-      
-      <div className="grid gap-6 md:grid-cols-2">
-        <div className="rounded-lg border bg-white p-4">
-          <h2 className="mb-4 text-lg font-semibold">Business Profile</h2>
-          <BusinessForm business={business} />
-        </div>
+    <div className="container mx-auto p-6">
+      <h1 className="text-3xl font-bold mb-8">Settings</h1>
+
+      <div className="grid gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Business Profile</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <BusinessForm
+              business={business}
+              onUpdate={(updatedBusiness) => {
+                // The useBusiness hook will automatically update the business state
+                // when the database is updated
+              }}
+            />
+          </CardContent>
+        </Card>
 
         <div className="rounded-lg border bg-white p-4">
           <h2 className="mb-4 text-lg font-semibold">Notification Settings</h2>
@@ -65,3 +90,5 @@ export default function SettingsPage() {
     </div>
   )
 } 
+ 
+ 

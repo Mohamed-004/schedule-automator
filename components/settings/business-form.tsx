@@ -1,28 +1,43 @@
+'use client';
+
 import { useState } from 'react'
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { Button } from '@/components/ui/button'
-import { businessOperations } from '@/lib/db-operations'
-import type { Business } from '@/lib/types'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Business } from '@/lib/types'
 
 interface BusinessFormProps {
-  business: Business | null
+  business: Business
+  onUpdate: (business: Business) => void
 }
 
-export function BusinessForm({ business }: BusinessFormProps) {
+export default function BusinessForm({ business, onUpdate }: BusinessFormProps) {
   const [formData, setFormData] = useState({
-    name: business?.name || '',
+    name: business.name,
+    email: business.email || '',
+    phone: business.phone || '',
+    address: business.address || '',
   })
   const [loading, setLoading] = useState(false)
+  const supabase = createClientComponentClient()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
 
     try {
-      if (business) {
-        await businessOperations.update(business.id, formData)
-      }
-    } catch (error) {
-      console.error('Failed to update business:', error)
+      const { data, error } = await supabase
+        .from('businesses')
+        .update(formData)
+        .eq('id', business.id)
+        .select()
+        .single()
+
+      if (error) throw error
+      onUpdate(data)
+    } catch (err) {
+      console.error('Failed to update business:', err)
     } finally {
       setLoading(false)
     }
@@ -35,32 +50,54 @@ export function BusinessForm({ business }: BusinessFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <label
-          htmlFor="name"
-          className="block text-sm font-medium text-gray-700"
-        >
-          Business Name
-        </label>
-        <input
-          type="text"
+      <div className="space-y-2">
+        <Label htmlFor="name">Business Name</Label>
+        <Input
           id="name"
           name="name"
           value={formData.name}
           onChange={handleChange}
           required
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
         />
       </div>
 
-      <div className="flex justify-end">
-        <Button
-          type="submit"
-          disabled={loading}
-        >
-          {loading ? 'Saving...' : 'Save Changes'}
-        </Button>
+      <div className="space-y-2">
+        <Label htmlFor="email">Email</Label>
+        <Input
+          id="email"
+          name="email"
+          type="email"
+          value={formData.email}
+          onChange={handleChange}
+        />
       </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="phone">Phone</Label>
+        <Input
+          id="phone"
+          name="phone"
+          type="tel"
+          value={formData.phone}
+          onChange={handleChange}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="address">Address</Label>
+        <Input
+          id="address"
+          name="address"
+          value={formData.address}
+          onChange={handleChange}
+        />
+      </div>
+
+      <Button type="submit" disabled={loading}>
+        {loading ? 'Saving...' : 'Save Changes'}
+      </Button>
     </form>
   )
 } 
+ 
+ 

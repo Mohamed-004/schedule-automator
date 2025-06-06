@@ -1,88 +1,105 @@
-import { Calendar, Clock, Users } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+'use client'
+
 import { useBusiness } from '@/hooks/use-business'
 import { useJobs } from '@/hooks/use-jobs'
-import { useWorkers } from '@/hooks/use-workers'
+import JobCard from '@/components/dashboard/job-card'
+import JobForm from '@/components/dashboard/job-form'
+import { useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { Plus } from 'lucide-react'
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 
 export default function DashboardPage() {
   const { business, loading: businessLoading } = useBusiness()
-  const { jobs, loading: jobsLoading } = useJobs()
-  const { workers, loading: workersLoading } = useWorkers()
+  const { jobs, loading: jobsLoading, error, refresh } = useJobs()
+  const [showAddJob, setShowAddJob] = useState(false)
+  const [jobError, setJobError] = useState<string | null>(null)
+  const [savingJob, setSavingJob] = useState(false)
+  const supabase = createClientComponentClient()
 
+  if (businessLoading || jobsLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <p className="text-lg">Loading...</p>
+      </div>
+    )
+  }
+
+  if (!business) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <p className="text-lg">No business found. Please create a business profile.</p>
+      </div>
+    )
+  }
+
+  const today = new Date()
   const todayJobs = jobs?.filter(job => {
     const jobDate = new Date(job.scheduled_at)
-    const today = new Date()
     return jobDate.toDateString() === today.toDateString()
   }) || []
 
-  const upcomingJobs = jobs?.filter(job => {
-    const jobDate = new Date(job.scheduled_at)
-    const today = new Date()
-    return jobDate > today
-  }) || []
-
-  if (businessLoading || jobsLoading || workersLoading) {
-    return <div>Loading...</div>
+  const handleAddJob = async (form: any) => {
+    setSavingJob(true)
+    setJobError(null)
+    const { error: insertError } = await supabase.from('jobs').insert([
+      {
+        ...form,
+        business_id: business.id,
+        scheduled_at: new Date(form.scheduled_at).toISOString(),
+        duration_hours: form.duration_hours ? parseFloat(form.duration_hours) : null,
+      },
+    ])
+    setSavingJob(false)
+    if (insertError) {
+      setJobError(insertError.message)
+      return
+    }
+    setShowAddJob(false)
+    refresh && refresh()
   }
 
   return (
-    <div className="p-6">
-      <h1 className="mb-6 text-2xl font-bold">Dashboard</h1>
-      
-      <div className="grid gap-6 md:grid-cols-3">
-        {/* Today's Jobs */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Today's Jobs</CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{todayJobs.length}</div>
-            <p className="text-xs text-muted-foreground">
-              {todayJobs.length === 0 ? 'No jobs scheduled' : 'Jobs scheduled for today'}
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Upcoming Jobs */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Upcoming Jobs</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{upcomingJobs.length}</div>
-            <p className="text-xs text-muted-foreground">
-              {upcomingJobs.length === 0 ? 'No upcoming jobs' : 'Jobs scheduled in the future'}
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Team Members */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Team Members</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{workers?.length || 0}</div>
-            <p className="text-xs text-muted-foreground">
-              {workers?.length === 0 ? 'No team members' : 'Active team members'}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Recent Activity */}
-      <div className="mt-6">
-        <h2 className="mb-4 text-xl font-semibold">Recent Activity</h2>
-        <div className="rounded-lg border bg-white">
-          {/* Activity list will go here */}
-          <div className="p-4 text-center text-sm text-muted-foreground">
-            No recent activity
+    <div>
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-2xl font-bold">Today's Schedule</h1>
+          <div className="text-gray-500 text-sm">
+            {today.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
           </div>
         </div>
+        <Button onClick={() => setShowAddJob(true)} className="flex items-center gap-2">
+          <Plus className="h-4 w-4" /> Add Job
+        </Button>
       </div>
+      <div>
+        {todayJobs.length === 0 ? (
+          <div className="text-center py-16">
+            <div className="text-gray-400 mb-4">No jobs scheduled for today.</div>
+            <Button onClick={() => setShowAddJob(true)} className="flex items-center gap-2 mx-auto">
+              <Plus className="h-4 w-4" /> Add Your First Job
+            </Button>
+          </div>
+        ) : (
+          todayJobs.map(job => <JobCard key={job.id} job={job} />)
+        )}
+      </div>
+      {/* Add Job Modal */}
+      {showAddJob && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-8 shadow-lg w-full max-w-md">
+            <h2 className="text-lg font-bold mb-4">Add Job</h2>
+            {jobError && <div className="text-red-500 text-sm mb-2">{jobError}</div>}
+            <JobForm
+              onSubmit={handleAddJob}
+              onCancel={() => setShowAddJob(false)}
+              saving={savingJob}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 } 
+ 
+ 

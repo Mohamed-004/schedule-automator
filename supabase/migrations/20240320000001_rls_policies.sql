@@ -33,37 +33,42 @@ USING (auth.uid() = id);
 CREATE POLICY "Workers are viewable by their business"
 ON workers FOR SELECT
 TO authenticated
-USING (business_id IN (
-    SELECT id FROM businesses
-    WHERE id = business_id
+USING (EXISTS (
+    SELECT 1 FROM businesses
+    WHERE businesses.id = workers.business_id
+    AND businesses.user_id = auth.uid()
 ));
 
 CREATE POLICY "Workers can be created by their business"
 ON workers FOR INSERT
 TO authenticated
-WITH CHECK (business_id IN (
-    SELECT id FROM businesses
-    WHERE id = business_id
+WITH CHECK (EXISTS (
+    SELECT 1 FROM businesses
+    WHERE businesses.id = workers.business_id
+    AND businesses.user_id = auth.uid()
 ));
 
 CREATE POLICY "Workers can be updated by their business"
 ON workers FOR UPDATE
 TO authenticated
-USING (business_id IN (
-    SELECT id FROM businesses
-    WHERE id = business_id
+USING (EXISTS (
+    SELECT 1 FROM businesses
+    WHERE businesses.id = workers.business_id
+    AND businesses.user_id = auth.uid()
 ))
-WITH CHECK (business_id IN (
-    SELECT id FROM businesses
-    WHERE id = business_id
+WITH CHECK (EXISTS (
+    SELECT 1 FROM businesses
+    WHERE businesses.id = workers.business_id
+    AND businesses.user_id = auth.uid()
 ));
 
 CREATE POLICY "Workers can be deleted by their business"
 ON workers FOR DELETE
 TO authenticated
-USING (business_id IN (
-    SELECT id FROM businesses
-    WHERE id = business_id
+USING (EXISTS (
+    SELECT 1 FROM businesses
+    WHERE businesses.id = workers.business_id
+    AND businesses.user_id = auth.uid()
 ));
 
 -- Create policies for clients table
@@ -280,3 +285,5 @@ USING (business_id IN (
     SELECT id FROM businesses
     WHERE id = business_id
 )); 
+ 
+ 

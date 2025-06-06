@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -9,43 +9,17 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Search, AlertTriangle } from "lucide-react"
+import { Plus, Search, AlertTriangle, User, Edit2, Trash2, Calendar as CalendarIcon, MapPin, Mail, Phone } from "lucide-react"
+import { Job } from '@/lib/types'
+import { useWorkers } from '@/hooks/use-workers'
+import { useBusiness } from '@/hooks/use-business'
+import JobForm from '@/components/dashboard/job-form'
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 
-const mockJobs = [
-  {
-    id: 1,
-    client: "Sarah Johnson",
-    service: "Plumbing Repair",
-    date: "2024-12-05",
-    time: "08:00 AM",
-    worker: "Mike Chen",
-    urgency: "Normal",
-    status: "Scheduled",
-    address: "123 Oak Street",
-  },
-  {
-    id: 2,
-    client: "Robert Davis",
-    service: "HVAC Maintenance",
-    date: "2024-12-05",
-    time: "10:30 AM",
-    worker: "Lisa Rodriguez",
-    urgency: "High",
-    status: "Scheduled",
-    address: "456 Pine Avenue",
-  },
-  {
-    id: 3,
-    client: "Emily Wilson",
-    service: "Electrical Installation",
-    date: "2024-12-06",
-    time: "02:00 PM",
-    worker: "David Kim",
-    urgency: "Normal",
-    status: "Pending",
-    address: "789 Maple Drive",
-  },
-]
+type JobsPanelProps = {
+  jobs: Job[]
+  refreshJobs: () => void | Promise<void>
+}
 
 const getUrgencyColor = (urgency: string) => {
   switch (urgency) {
@@ -60,42 +34,123 @@ const getUrgencyColor = (urgency: string) => {
   }
 }
 
-export function JobsPanel() {
-  const [jobs, setJobs] = useState(mockJobs)
+function formatPhone(phone: string) {
+  if (!phone) return '';
+  const cleaned = ('' + phone).replace(/\D/g, '');
+  if (cleaned.length === 10) {
+    return `(${cleaned.slice(0,3)}) ${cleaned.slice(3,6)}-${cleaned.slice(6)}`;
+  }
+  if (cleaned.length === 11 && cleaned[0] === '1') {
+    return `+1 (${cleaned.slice(1,4)}) ${cleaned.slice(4,7)}-${cleaned.slice(7)}`;
+  }
+  return phone;
+}
+
+function countryToFlag(countryCode: string) {
+  if (!countryCode) return '';
+  return countryCode
+    .toUpperCase()
+    .replace(/./g, char =>
+      String.fromCodePoint(127397 + char.charCodeAt(0))
+    );
+}
+
+export function JobsPanel({ jobs, refreshJobs }: JobsPanelProps) {
+  const { business } = useBusiness();
+  const { workers, loading: workersLoading, error: workersError } = useWorkers(business?.id);
+  const [clients, setClients] = useState<any[]>([]);
+  const supabase = createClientComponentClient();
+  
+  // Debug session
+  useEffect(() => {
+    async function checkSession() {
+      const { data: { session } } = await supabase.auth.getSession();
+      console.log('=== Session Debug ===');
+      console.log('Session:', session);
+      console.log('User ID:', session?.user?.id);
+      console.log('Business:', business);
+    }
+    checkSession();
+  }, [business, supabase]);
+
+  // Debug business and workers
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      console.log('=== Jobs Panel Debug ===');
+      console.log('Business:', business);
+      console.log('Workers Loading:', workersLoading);
+      console.log('Workers Error:', workersError);
+    }
+  }, [business, workersLoading, workersError]);
+
+  useEffect(() => {
+    async function fetchClients() {
+      if (!business?.id) return;
+      const { data } = await supabase.from('clients').select('*').eq('business_id', business.id);
+      setClients(data || []);
+    }
+    fetchClients();
+  }, [business, supabase]);
+
   const [isAddJobOpen, setIsAddJobOpen] = useState(false)
-  const [newJob, setNewJob] = useState({
-    client: "",
-    service: "",
-    date: "",
-    time: "",
-    worker: "",
-    urgency: "Normal",
-    address: "",
-    notes: "",
+  const [isEditJobOpen, setIsEditJobOpen] = useState(false)
+  const [editJob, setEditJob] = useState<Job | null>(null)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+
+  // Map worker_id to name (normalize and trim)
+  const workerMap = Object.fromEntries(
+    workers.map(w => [String(w.id).trim(), w.name])
+  )
+  
+  // Debug: print all worker IDs and mapping
+  if (typeof window !== 'undefined') {
+    console.log('=== Worker Mapping Debug ===');
+    console.log('Business ID:', business?.id);
+    console.log('All workers:', workers);
+    console.log('Worker IDs:', workers.map(w => w.id));
+    console.log('Worker Map:', workerMap);
+    console.log('Jobs:', jobs);
+    console.log('Job Worker IDs:', jobs.map(j => j.worker_id));
+  }
+
+  const clientMap = Object.fromEntries(
+    clients.map(c => [String(c.id).trim(), c])
+  );
+
+  // Filtering logic
+  const filteredJobs = jobs.filter(job => {
+    const matchesSearch =
+      (job.title || "").toLowerCase().includes(search.toLowerCase()) ||
+      (job.client_name || "").toLowerCase().includes(search.toLowerCase()) ||
+      (job.location || "").toLowerCase().includes(search.toLowerCase())
+    const matchesStatus = statusFilter === 'all' || job.status === statusFilter
+    return matchesSearch && matchesStatus
   })
 
+  // Edit modal handlers
+  const handleEditJob = (job: Job) => {
+    setEditJob(job)
+    setIsEditJobOpen(true)
+  }
+  const handleEditJobSave = async (form: any) => {
+    // TODO: Call API to update job
+    setIsEditJobOpen(false)
+    setEditJob(null)
+    refreshJobs && refreshJobs()
+    // Force refresh workers as well
+    setTimeout(() => window.location.reload(), 500)
+  }
+
   const handleAddJob = () => {
-    const job = {
-      id: jobs.length + 1,
-      ...newJob,
-      status: "Scheduled",
-    }
-    setJobs([...jobs, job])
-    setNewJob({
-      client: "",
-      service: "",
-      date: "",
-      time: "",
-      worker: "",
-      urgency: "Normal",
-      address: "",
-      notes: "",
-    })
+    // Replace this with actual add job logic
+    console.log("Adding job:")
     setIsAddJobOpen(false)
   }
 
-  const handleCancelJob = (jobId: number) => {
-    setJobs(jobs.map((job) => (job.id === jobId ? { ...job, status: "Cancelled" } : job)))
+  const handleCancelJob = (jobId: string) => {
+    // Replace this with actual cancel job logic
+    console.log("Cancelling job with id:", jobId)
   }
 
   const triggerBufferReschedule = () => {
@@ -127,14 +182,12 @@ export function JobsPanel() {
                   <Label htmlFor="client">Client Name</Label>
                   <Input
                     id="client"
-                    value={newJob.client}
-                    onChange={(e) => setNewJob({ ...newJob, client: e.target.value })}
                     placeholder="Enter client name"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="service">Service Type</Label>
-                  <Select value={newJob.service} onValueChange={(value) => setNewJob({ ...newJob, service: value })}>
+                  <Select>
                     <SelectTrigger>
                       <SelectValue placeholder="Select service" />
                     </SelectTrigger>
@@ -151,8 +204,6 @@ export function JobsPanel() {
                   <Input
                     id="date"
                     type="date"
-                    value={newJob.date}
-                    onChange={(e) => setNewJob({ ...newJob, date: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
@@ -160,13 +211,11 @@ export function JobsPanel() {
                   <Input
                     id="time"
                     type="time"
-                    value={newJob.time}
-                    onChange={(e) => setNewJob({ ...newJob, time: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="worker">Assign Worker</Label>
-                  <Select value={newJob.worker} onValueChange={(value) => setNewJob({ ...newJob, worker: value })}>
+                  <Select>
                     <SelectTrigger>
                       <SelectValue placeholder="Select worker" />
                     </SelectTrigger>
@@ -178,25 +227,10 @@ export function JobsPanel() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="urgency">Urgency Level</Label>
-                  <Select value={newJob.urgency} onValueChange={(value) => setNewJob({ ...newJob, urgency: value })}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Normal">Normal</SelectItem>
-                      <SelectItem value="Medium">Medium</SelectItem>
-                      <SelectItem value="High">High</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
                 <div className="col-span-2 space-y-2">
                   <Label htmlFor="address">Address</Label>
                   <Input
                     id="address"
-                    value={newJob.address}
-                    onChange={(e) => setNewJob({ ...newJob, address: e.target.value })}
                     placeholder="Enter job address"
                   />
                 </div>
@@ -204,8 +238,6 @@ export function JobsPanel() {
                   <Label htmlFor="notes">Notes</Label>
                   <Textarea
                     id="notes"
-                    value={newJob.notes}
-                    onChange={(e) => setNewJob({ ...newJob, notes: e.target.value })}
                     placeholder="Additional notes or requirements"
                   />
                 </div>
@@ -232,29 +264,20 @@ export function JobsPanel() {
             <div className="flex-1">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input placeholder="Search jobs..." className="pl-10" />
+                <Input placeholder="Search jobs..." className="pl-10" value={search} onChange={e => setSearch(e.target.value)} />
               </div>
             </div>
-            <Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-40">
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="scheduled">Scheduled</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="in_progress">In Progress</SelectItem>
+                <SelectItem value="rescheduled">Rescheduled</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
                 <SelectItem value="cancelled">Cancelled</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select>
-              <SelectTrigger className="w-40">
-                <SelectValue placeholder="Filter by urgency" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Urgency</SelectItem>
-                <SelectItem value="high">High</SelectItem>
-                <SelectItem value="medium">Medium</SelectItem>
-                <SelectItem value="normal">Normal</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -263,41 +286,110 @@ export function JobsPanel() {
 
       {/* Jobs List */}
       <div className="space-y-4">
-        {jobs.map((job) => (
-          <Card key={job.id}>
-            <CardContent className="p-6">
-              <div className="flex items-start justify-between">
-                <div className="flex-1 grid md:grid-cols-3 gap-4">
-                  <div>
-                    <h3 className="font-semibold text-lg">{job.client}</h3>
-                    <p className="text-gray-600">{job.service}</p>
-                    <p className="text-sm text-gray-500">{job.address}</p>
+        {filteredJobs.map((job) => {
+          // Debug output
+          console.log('All workers:', workers);
+          console.log('Job:', job);
+          console.log('worker_id:', `[${String(job.worker_id).trim()}]`);
+          console.log('workerMap:', workerMap);
+          const jobWorkerId = String(job.worker_id).trim();
+          const workerName = workerMap[jobWorkerId];
+          const client = clientMap[String(job.client_id).trim()];
+          return (
+            <div key={job.id} className="bg-white rounded-lg border p-4 md:p-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between shadow-sm hover:shadow-md transition-shadow w-full">
+              <div className="flex flex-col gap-4 w-full md:flex-row md:items-center md:gap-6">
+                {/* Left: Client & Job Info */}
+                <div className="flex-1 min-w-[120px]">
+                  <div className="font-semibold text-lg mb-1 truncate">{job.client_name}</div>
+                  <div className="text-gray-600 text-base mb-1 truncate">{job.title}</div>
+                  <div className="flex items-center gap-1 text-xs text-gray-400 mb-1">
+                    <MapPin className="h-4 w-4" />
+                    <span className="truncate">{job.location}</span>
                   </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Date & Time</p>
-                    <p className="font-medium">
-                      {job.date} at {job.time}
-                    </p>
-                    <p className="text-sm text-gray-500">Worker: {job.worker}</p>
+                  {/* Client Info */}
+                  {client && (
+                    <div className="flex flex-wrap gap-2 mt-2 text-xs text-gray-700 items-center">
+                      <User className="h-4 w-4 text-blue-400" />
+                      <span className="font-medium">Client:</span>
+                      <span>{client.name}</span>
+                      {client.email && (
+                        <span className="flex items-center gap-1"><Mail className="h-4 w-4 text-gray-400" />{client.email}</span>
+                      )}
+                      {client.phone && (
+                        <span className="flex items-center gap-1"><Phone className="h-4 w-4 text-gray-400" />{client.country && <span title={client.country}>{countryToFlag(client.country)}</span>}{formatPhone(client.phone)}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {/* Middle: Date/Time & Worker */}
+                <div className="flex flex-col gap-2 min-w-[160px]">
+                  <div className="flex items-center gap-2">
+                    <CalendarIcon className="h-4 w-4 text-gray-400" />
+                    <span className="font-medium text-sm">
+                      {new Date(job.scheduled_at).toLocaleDateString()} at {new Date(job.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
                   </div>
-                  <div className="flex flex-col gap-2">
-                    <Badge className={getUrgencyColor(job.urgency)}>{job.urgency} Priority</Badge>
-                    <Badge variant="outline">{job.status}</Badge>
+                  <div className="flex items-center gap-2">
+                    <User className="h-4 w-4 text-gray-400" />
+                    {workerName ? (
+                      <span className="font-medium text-sm">{workerName}</span>
+                    ) : (
+                      <span className="text-gray-400 text-sm flex items-center gap-1"><span className="inline-block w-5 h-5 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-xs">?</span> Unassigned</span>
+                    )}
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline">
-                    Edit
-                  </Button>
-                  <Button size="sm" variant="destructive" onClick={() => handleCancelJob(job.id)}>
-                    Cancel
-                  </Button>
+                {/* Right: Status Badge */}
+                <div className="flex flex-col gap-2 min-w-[100px] items-end md:items-center">
+                  <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                    job.status === 'scheduled' ? 'bg-green-100 text-green-700' :
+                    job.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
+                    job.status === 'rescheduled' ? 'bg-yellow-100 text-yellow-700' :
+                    job.status === 'completed' ? 'bg-gray-100 text-gray-700' :
+                    job.status === 'cancelled' ? 'bg-red-100 text-red-700' :
+                    'bg-gray-100 text-gray-700'
+                  }`}>{job.status.charAt(0).toUpperCase() + job.status.slice(1)}</span>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        ))}
+              {/* Actions */}
+              <div className="flex flex-col gap-2 md:flex-row md:gap-2 items-stretch md:items-center w-full md:w-auto">
+                <button
+                  className="p-3 rounded hover:bg-gray-100 transition-colors w-full md:w-auto"
+                  title="Edit Job"
+                  onClick={() => handleEditJob(job)}
+                  aria-label="Edit Job"
+                >
+                  <Edit2 className="h-5 w-5 text-primary mx-auto" />
+                </button>
+                <button
+                  className="p-3 rounded hover:bg-red-50 transition-colors w-full md:w-auto"
+                  title="Cancel Job"
+                  onClick={() => handleCancelJob(job.id)}
+                  aria-label="Cancel Job"
+                >
+                  <Trash2 className="h-5 w-5 text-red-500 mx-auto" />
+                </button>
+                {job.status === 'rescheduled' && (
+                  <span className="ml-0 md:ml-2 flex items-center gap-1 text-yellow-700 text-xs font-semibold"><AlertTriangle className="h-4 w-4" /> Rescheduled</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
+      {/* Edit Job Modal */}
+      {isEditJobOpen && editJob && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-8 shadow-lg w-full max-w-md">
+            <h2 className="text-lg font-bold mb-4">Edit Job</h2>
+            <JobForm
+              onSubmit={handleEditJobSave}
+              onCancel={() => { setIsEditJobOpen(false); setEditJob(null); }}
+              saving={false}
+              initialData={editJob}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

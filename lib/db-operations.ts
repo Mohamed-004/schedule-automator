@@ -69,13 +69,57 @@ export const workerOperations = {
   },
 
   async getByBusiness(businessId: string) {
-    const { data, error } = await supabase
-      .from('workers')
-      .select('*')
-      .eq('business_id', businessId)
-    
-    if (error) throw error
-    return data
+    console.log('workerOperations.getByBusiness called with businessId:', businessId);
+    try {
+      // Debug: Check all workers in the database
+      const { data: allWorkers, error: allWorkersError } = await supabase
+        .from('workers')
+        .select('*');
+      
+      console.log('All workers in database:', allWorkers);
+      if (allWorkersError) {
+        console.error('Error fetching all workers:', allWorkersError);
+      }
+
+      // Debug: Check the specific business
+      const { data: business, error: businessError } = await supabase
+        .from('businesses')
+        .select('*')
+        .eq('id', businessId)
+        .single();
+      
+      console.log('Business data:', business);
+      if (businessError) {
+        console.error('Error fetching business:', businessError);
+      }
+
+      // Debug: Check workers for this business
+      const { data: workers, error: workersError } = await supabase
+        .from('workers')
+        .select('*')
+        .eq('business_id', businessId);
+      
+      console.log('Workers for business:', workers);
+      if (workersError) {
+        console.error('Error fetching workers for business:', workersError);
+      }
+
+      // Debug: Check RLS policies
+      const { data: policies, error: policiesError } = await supabase
+        .from('pg_policies')
+        .select('*')
+        .eq('tablename', 'workers');
+      
+      console.log('Worker table policies:', policies);
+      if (policiesError) {
+        console.error('Error fetching policies:', policiesError);
+      }
+
+      return workers || [];
+    } catch (err) {
+      console.error('Error in getByBusiness:', err);
+      throw err;
+    }
   },
 
   async update(id: string, updates: Partial<Worker>) {
@@ -329,3 +373,5 @@ export const notificationOperations = {
     if (error) throw error
   }
 } 
+ 
+ 

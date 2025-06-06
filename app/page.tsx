@@ -1,4 +1,8 @@
-"use client"
+import { redirect } from 'next/navigation'
+
+export default function Home() {
+  redirect('/dashboard')
+}
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"

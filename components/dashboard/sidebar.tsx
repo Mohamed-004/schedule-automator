@@ -1,48 +1,94 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Calendar, Users, Building2, Clock, Settings } from 'lucide-react'
+import { Calendar, Users, Briefcase, Bell, ListTodo, Menu, X } from 'lucide-react'
+import { useState } from 'react'
 import { cn } from '@/lib/utils'
 
-const navigation = [
-  { name: 'Dashboard', href: '/dashboard', icon: Building2 },
-  { name: 'Schedule', href: '/dashboard/schedule', icon: Calendar },
-  { name: 'Team', href: '/dashboard/team', icon: Users },
-  { name: 'Time Tracking', href: '/dashboard/time-tracking', icon: Clock },
-  { name: 'Settings', href: '/dashboard/settings', icon: Settings },
+const navLinks = [
+  { href: '/dashboard', label: "Today's Schedule", icon: ListTodo },
+  { href: '/dashboard/calendar', label: 'Calendar View', icon: Calendar },
+  { href: '/dashboard/team', label: 'Workers', icon: Users },
+  { href: '/dashboard/jobs', label: 'Jobs', icon: Briefcase },
+  { href: '/dashboard/notifications', label: 'Notifications', icon: Bell },
 ]
 
-export function Sidebar() {
+export default function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname()
-
+  // On mobile, only render if open. On desktop, always render.
+  // Use md:hidden and md:block to control visibility.
   return (
-    <div className="flex h-full w-64 flex-col border-r bg-white">
-      <div className="flex h-16 items-center border-b px-6">
-        <Link href="/dashboard" className="flex items-center gap-2">
-          <Building2 className="h-6 w-6" />
-          <span className="text-lg font-semibold">Smart Scheduler</span>
-        </Link>
+    <aside
+      className={`
+        bg-white border-r flex flex-col
+        h-full w-64
+        z-40
+        fixed top-0 left-0
+        transition-transform duration-200
+        md:static md:z-auto md:block
+        ${open ? 'translate-x-0' : '-translate-x-full'}
+        md:translate-x-0
+      `}
+      style={{ minHeight: '100vh' }}
+    >
+      <div className="px-6 py-6 border-b flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold">Manager Dashboard</h2>
+          <p className="text-xs text-gray-500 mt-1">Manage jobs, workers, and schedules</p>
+        </div>
+        {/* Close button for mobile */}
+        <button
+          className="md:hidden p-2 ml-2"
+          onClick={onClose}
+          aria-label="Close sidebar"
+        >
+          <X className="h-6 w-6" />
+        </button>
       </div>
-      
-      <nav className="flex-1 space-y-1 px-3 py-4">
-        {navigation.map((item) => {
-          const isActive = pathname === item.href
+      <nav className="flex-1 px-2 py-4 space-y-1">
+        {navLinks.map(({ href, label, icon: Icon }) => {
+          const isActive = pathname === href
           return (
             <Link
-              key={item.name}
-              href={item.href}
-              className={cn(
-                'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-gray-100 text-gray-900'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              )}
+              key={href}
+              href={href}
+              className={`flex items-center gap-3 px-4 py-2 rounded-md text-sm font-medium transition-colors
+                ${isActive ? 'bg-primary text-primary-foreground' : 'text-gray-700 hover:bg-gray-100'}`}
+              onClick={onClose}
             >
-              <item.icon className="h-5 w-5" />
-              {item.name}
+              <Icon className="h-5 w-5" />
+              {label}
             </Link>
           )
         })}
       </nav>
-    </div>
+    </aside>
+  )
+}
+
+export function SidebarWithToggle() {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      {/* Hamburger menu for mobile, only show when sidebar is closed */}
+      {!open && (
+        <button
+          className="fixed z-50 top-4 left-4 md:hidden bg-white border rounded p-2 shadow"
+          onClick={() => setOpen(true)}
+          aria-label="Open sidebar"
+        >
+          <Menu className="h-6 w-6" />
+        </button>
+      )}
+      {/* Overlay */}
+      {open && (
+        <div
+          className="fixed inset-0 z-30 bg-black/30 md:hidden"
+          onClick={() => setOpen(false)}
+        />
+      )}
+      <Sidebar open={open || typeof window === 'undefined'} onClose={() => setOpen(false)} />
+    </>
   )
 } 
+ 
+ 

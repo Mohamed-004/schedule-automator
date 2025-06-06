@@ -49,7 +49,7 @@ export type Job = {
   worker_id: string
   title: string
   description: string
-  status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
+  status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled' | 'rescheduled'
   scheduled_at: string
   completed_at: string | null
   location: string
@@ -192,3 +192,5 @@ export const schema = {
     updated_at: 'timestamp with time zone default timezone(\'utc\'::text, now()) not null'
   }
 } 
+ 
+ 
