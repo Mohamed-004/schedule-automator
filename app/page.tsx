@@ -10,6 +10,7 @@ import { CalendarView } from "@/components/calendar-view"
 import { WorkersPanel } from "@/components/workers-panel"
 import { JobsPanel } from "@/components/jobs-panel"
 import { NotificationsLog } from "@/components/notifications-log"
+import { TaskList } from '@/components/TaskList'
 
 export default function ManagerDashboard() {
   const [activeSection, setActiveSection] = useState("schedule")
@@ -26,6 +27,8 @@ export default function ManagerDashboard() {
         return <JobsPanel />
       case "notifications":
         return <NotificationsLog />
+      case "tasks":
+        return <TaskList />
       default:
         return <TodaysSchedule />
     }

@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import type React from "react"
-import { Calendar, Clock, Users, Briefcase, Bell, Settings, Menu } from "lucide-react"
+import { Calendar, Clock, Users, Briefcase, Bell, Settings, Menu, CheckSquare } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
@@ -19,6 +19,7 @@ const navigationItems = [
   { id: "calendar", label: "Calendar View", icon: Calendar },
   { id: "workers", label: "Workers", icon: Users },
   { id: "jobs", label: "Jobs", icon: Briefcase },
+  { id: "tasks", label: "Tasks", icon: CheckSquare },
   { id: "notifications", label: "Notifications", icon: Bell },
 ]
 
