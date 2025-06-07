@@ -1,9 +1,15 @@
-import { Clock, MapPin, User, Mail, Phone } from 'lucide-react'
+import { Clock, MapPin, User, Mail, Phone, Tag, Calendar, MoreHorizontal, Sun, Wind, CloudDrizzle, CheckCircle, CalendarClock } from 'lucide-react'
 import type { Job } from '@/lib/types'
 import { useWorkers } from '@/hooks/use-workers'
 import { useBusiness } from '@/hooks/use-business'
 import { useEffect, useState } from 'react'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { useSupabase } from '@/lib/SupabaseProvider'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { motion, AnimatePresence } from 'framer-motion'
+import { cn } from '@/lib/utils'
 
 function formatPhone(phone: string) {
   if (!phone) return '';
@@ -30,93 +36,183 @@ interface JobListProps {
   jobs: Job[]
 }
 
-export default function JobList({ jobs }: JobListProps) {
-  const { business } = useBusiness();
-  const { workers } = useWorkers(business?.id);
-  const [clients, setClients] = useState<any[]>([]);
-  const supabase = createClientComponentClient();
+const getStatusStyles = (status: string) => {
+  switch (status.toLowerCase()) {
+    case 'completed': return 'bg-green-100 text-green-800 border-green-200'
+    case 'in_progress': return 'bg-yellow-100 text-yellow-800 border-yellow-200'
+    case 'cancelled': return 'bg-red-100 text-red-800 border-red-200'
+    default: return 'bg-sky-100 text-sky-800 border-sky-200'
+  }
+}
 
+const getStatusIcon = (status: string) => {
+  switch (status.toLowerCase()) {
+    case 'completed': return <CheckCircle className="h-3.5 w-3.5" />;
+    case 'in_progress': return <CalendarClock className="h-3.5 w-3.5" />;
+    case 'cancelled': return <Tag className="h-3.5 w-3.5" />;
+    default: return <Calendar className="h-3.5 w-3.5" />;
+  }
+};
+
+const EmptyState = () => (
+  <motion.div
+    initial={{ opacity: 0, scale: 0.95 }}
+    animate={{ opacity: 1, scale: 1 }}
+    transition={{ duration: 0.3 }}
+    className="flex flex-col items-center justify-center text-center p-8 bg-white rounded-xl border border-gray-200 shadow"
+  >
+    <div className="relative mb-4">
+      <motion.div
+        animate={{ 
+          rotate: [0, 15, 0],
+          y: [0, -2, 0]
+        }}
+        transition={{ 
+          duration: 5, 
+          repeat: Infinity,
+          ease: 'easeInOut' 
+        }}
+      >
+        <Sun className="h-14 w-14 text-yellow-400" />
+      </motion.div>
+      <motion.div
+        animate={{ rotate: 360 }}
+        transition={{ 
+          duration: 20, 
+          repeat: Infinity,
+          ease: 'linear' 
+        }}
+        className="absolute -bottom-1 -left-3"
+      >
+        <Wind className="h-5 w-5 text-blue-200" />
+      </motion.div>
+      <motion.div
+        animate={{ 
+          y: [0, -3, 0],
+          x: [0, 2, 0]
+        }}
+        transition={{ 
+          duration: 4, 
+          repeat: Infinity,
+          ease: 'easeInOut',
+          delay: 1
+        }}
+        className="absolute -top-2 -right-4"
+      >
+        <CloudDrizzle className="h-7 w-7 text-blue-400" />
+      </motion.div>
+    </div>
+    <h3 className="text-lg font-bold text-gray-900">All clear!</h3>
+    <p className="text-sm text-gray-500 mt-1">No jobs scheduled for this day.</p>
+  </motion.div>
+)
+
+const JobCard = ({ job, index }: { job: Job, index: number }) => {
+  const scheduledTime = new Date(job.scheduled_at);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay: index * 0.1 }}
+      className="group"
+    >
+      <Card className="overflow-hidden transition-all duration-300 hover:shadow-md hover:translate-y-[-2px] bg-white border border-gray-200 shadow">
+        <div className={cn(
+          'p-4 border-l-4 relative', 
+          getStatusStyles(job.status).replace('bg-', 'border-').replace('-100', '-500').replace('text-','')
+        )}>
+          {/* Status indicator dot */}
+          <div className="absolute top-2 right-2">
+            <Badge variant="outline" className={cn('text-xs px-2 py-0 h-5 flex items-center gap-1', getStatusStyles(job.status))}>
+              {getStatusIcon(job.status)}
+              <span>{job.status}</span>
+            </Badge>
+          </div>
+
+          <div className="pr-20">
+            <p className="font-bold text-gray-900 mb-1 line-clamp-1">{job.title}</p>
+            <p className="text-xs text-gray-500 line-clamp-1">{job.description}</p>
+          </div>
+
+          <div className="mt-3 flex items-center justify-between text-sm">
+            <div className="flex items-center gap-2 text-gray-600">
+              <Clock className="h-4 w-4 text-gray-400" />
+              <span className="font-medium">{scheduledTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+            </div>
+          </div>
+          
+          <div className="mt-4 pt-3 border-t border-dashed border-gray-200 grid grid-cols-2 gap-2 text-sm">
+            <div className="flex items-center gap-2">
+              <User className="h-4 w-4 text-gray-400" />
+              <span className="font-medium text-gray-700 truncate">{job.worker?.name || 'Unassigned'}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <MapPin className="h-4 w-4 text-gray-400" />
+              <span className="font-medium text-gray-700 truncate">{job.location || 'No location'}</span>
+            </div>
+          </div>
+          
+          {/* Quick action buttons that appear on hover */}
+          <div className="absolute right-2 bottom-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Button variant="ghost" size="icon" className="h-7 w-7">
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </Card>
+    </motion.div>
+  )
+}
+
+export default function JobList({ jobs }: JobListProps) {
+  const { supabase } = useSupabase();
+  const { business } = useBusiness();
+  const { workers } = useWorkers();
+  const [clients, setClients] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  
   useEffect(() => {
     async function fetchClients() {
-      if (!business?.id) return;
-      const { data } = await supabase.from('clients').select('*').eq('business_id', business.id);
-      setClients(data || []);
+      if (!business?.id || !supabase) return;
+      
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('clients')
+          .select('*')
+          .eq('business_id', business.id);
+          
+        if (error) throw error;
+        setClients(data || []);
+      } catch (err) {
+        console.error('Error fetching clients:', err);
+      } finally {
+        setLoading(false);
+      }
     }
+    
     fetchClients();
   }, [business, supabase]);
 
   const workerMap = Object.fromEntries(
-    workers.map((w: any) => [String(w.id).trim(), w.name])
+    workers.map((w: any) => [String(w.id).trim(), w])
   );
   const clientMap = Object.fromEntries(
     clients.map((c: any) => [String(c.id).trim(), c])
   );
-
+  
   if (jobs.length === 0) {
-    return (
-      <div className="flex h-40 items-center justify-center text-sm text-gray-500">
-        No jobs scheduled for this date
-      </div>
-    )
+    return <EmptyState />;
   }
 
   return (
-    <div className="space-y-4">
-      {jobs.map(job => {
-        const jobWorkerId = String(job.worker_id).trim();
-        const workerName = workerMap[jobWorkerId];
-        const client = clientMap[String(job.client_id).trim()];
-        return (
-          <div
-            key={job.id}
-            className="rounded-lg border bg-white p-4 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4"
-          >
-            <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-2 mb-2">
-                <h3 className="font-semibold text-lg truncate">{job.title}</h3>
-                <span className="rounded-full bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
-                  {job.status}
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-4 text-sm text-gray-600 mb-2">
-                <div className="flex items-center gap-1">
-                  <Clock className="h-4 w-4" />
-                  <span>{new Date(job.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <MapPin className="h-4 w-4" />
-                  <span>{job.location}</span>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-4 text-sm text-gray-700">
-                <div className="flex items-center gap-1">
-                  <User className="h-4 w-4 text-gray-500" />
-                  <span className="font-medium">Worker:</span>
-                  <span>{workerName || 'Unassigned'}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <User className="h-4 w-4 text-blue-400" />
-                  <span className="font-medium">Client:</span>
-                  <span>{client?.name || 'Unknown Client'}</span>
-                </div>
-                {client?.email && (
-                  <div className="flex items-center gap-1 break-all">
-                    <Mail className="h-4 w-4 text-gray-400" />
-                    <span>{client.email}</span>
-                  </div>
-                )}
-                {client?.phone && (
-                  <div className="flex items-center gap-1 break-all" title={formatPhone(client.phone)}>
-                    <Phone className="h-4 w-4 text-gray-400" />
-                    {client?.country && <span title={client.country}>{countryToFlag(client.country)}</span>}
-                    <span>{formatPhone(client.phone)}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )
-      })}
+    <div className="space-y-3">
+      <AnimatePresence>
+        {jobs.map((job, index) => (
+          <JobCard key={job.id} job={job} index={index} />
+        ))}
+      </AnimatePresence>
     </div>
   )
 } 

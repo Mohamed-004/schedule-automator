@@ -1,64 +1,76 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
-import { Business } from '@/lib/types'
+import { useEffect, useState } from 'react'
+import { useSupabase } from '@/lib/SupabaseProvider'
+import type { Business } from '@/lib/types'
 
 export function useBusiness() {
+  const { supabase, user } = useSupabase()
   const [business, setBusiness] = useState<Business | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
-  const supabase = createClientComponentClient()
 
   useEffect(() => {
-    async function fetchOrCreateBusiness() {
-      try {
-        // First, try to fetch the existing business
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session) {
-          throw new Error('No session found')
-        }
+    async function fetchBusiness() {
+      if (!supabase || !user) {
+        setBusiness(null)
+        setLoading(false)
+        return
+      }
 
-        const { data: existingBusiness, error: fetchError } = await supabase
+      try {
+        setLoading(true)
+        const { data, error: businessError } = await supabase
           .from('businesses')
           .select('*')
-          .eq('user_id', session.user.id)
+          .eq('user_id', user.id)
           .single()
 
-        if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 is "no rows returned"
-          throw fetchError
-        }
-
-        if (!existingBusiness) {
-          // If no business exists, create one
-          const { data: newBusiness, error: createError } = await supabase
-            .from('businesses')
-            .insert([
-              {
-                user_id: session.user.id,
-                name: 'My Business',
-                email: session.user.email,
-              }
-            ])
-            .select()
-            .single()
-
-          if (createError) throw createError
-          setBusiness(newBusiness)
+        if (businessError) {
+          if (businessError.code === 'PGRST116') {
+            setBusiness(null) // No business found for this user, a valid state.
+          } else {
+            throw businessError
+          }
         } else {
-          setBusiness(existingBusiness)
+          setBusiness(data)
         }
       } catch (err) {
-        setError(err instanceof Error ? err : new Error('Failed to fetch or create business'))
+        console.error('Error fetching business:', err)
+        setError(err instanceof Error ? err : new Error('Failed to fetch business'))
       } finally {
         setLoading(false)
       }
     }
 
-    fetchOrCreateBusiness()
-  }, [supabase])
+    fetchBusiness()
+  }, [supabase, user])
 
-  return { business, loading, error }
+  const createBusiness = async (businessData: Omit<Business, 'id' | 'created_at' | 'updated_at'>) => {
+    if (!supabase || !user) return null;
+    
+    try {
+      setLoading(true);
+      const { data, error: insertError } = await supabase
+        .from('businesses')
+        .insert([{ ...businessData, user_id: user.id }])
+        .select()
+        .single();
+      
+      if (insertError) throw insertError;
+      
+      setBusiness(data);
+      return data;
+    } catch (err) {
+      console.error('Error creating business:', err);
+      setError(err instanceof Error ? err : new Error('Failed to create business'));
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return { business, loading, error, createBusiness }
 } 
  
  

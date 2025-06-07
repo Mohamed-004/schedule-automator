@@ -1,162 +1,286 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { useState } from 'react';
+import { useSupabase } from '@/lib/SupabaseProvider';
 import { useBusiness } from '@/hooks/use-business';
+import { useWorkers } from '@/hooks/use-workers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Trash2, Plus } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Card, CardContent } from '@/components/ui/card';
+import { Trash2, Plus, User, Mail, Phone, UserCircle, Shield } from 'lucide-react';
+import type { Worker } from '@/lib/types';
 
 export default function TeamPage() {
-  const supabase = createClientComponentClient();
+  const { supabase } = useSupabase();
   const { business, loading: businessLoading } = useBusiness();
-  const [workers, setWorkers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { workers, loading, error: workersError, addWorker, deleteWorker, refresh } = useWorkers();
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ name: '', email: '', phone: '', role: 'Worker' });
+  const [form, setForm] = useState<Omit<Worker, 'id' | 'business_id' | 'created_at' | 'updated_at' | 'status'>>({ 
+    name: '', 
+    email: '', 
+    phone: '', 
+    role: 'technician'
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchWorkers = async () => {
-    if (!business) {
-      setWorkers([]);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    const { data } = await supabase
-      .from('workers')
-      .select('*')
-      .eq('business_id', business.id)
-      .order('created_at', { ascending: true });
-    setWorkers(data || []);
-    setLoading(false);
-  };
-
-  useEffect(() => { 
-    if (business) {
-      fetchWorkers(); 
-    }
-  }, [business]);
-
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaving(true);
-    setError(null);
+    
     if (!business) {
       setError('No business found.');
-      setSaving(false);
       return;
     }
-
-    console.log('Adding worker for business:', business);
-    console.log('Form data:', form);
+    
+    setSaving(true);
+    setError(null);
 
     try {
       const workerData = { 
-        ...form, 
-        business_id: business.id, 
+        ...form,
+        business_id: business.id,
         status: 'active',
-        role: 'technician' // Ensure role matches the enum
       };
-      console.log('Worker data to insert:', workerData);
 
-      const { data, error: insertError } = await supabase
-        .from('workers')
-        .insert([workerData])
-        .select();
-
-      if (insertError) {
-        console.error('Error inserting worker:', insertError);
-        setError(insertError.message);
-        setSaving(false);
+      const result = await addWorker(workerData as any);
+      
+      if (!result) {
+        setError('Failed to add worker. Please try again.');
         return;
       }
 
-      console.log('Successfully inserted worker:', data);
       setShowAdd(false);
-      setForm({ name: '', email: '', phone: '', role: 'Worker' });
-      setSaving(false);
-      fetchWorkers();
+      setForm({ name: '', email: '', phone: '', role: 'technician' });
     } catch (err) {
-      console.error('Error in handleAdd:', err);
       setError(err instanceof Error ? err.message : 'Failed to add worker');
+    } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    await supabase.from('workers').delete().eq('id', id);
-    fetchWorkers();
+    if (window.confirm('Are you sure you want to remove this worker?')) {
+      const success = await deleteWorker(id);
+      if (!success) {
+        setError('Failed to delete worker');
+      }
+    }
   };
 
   if (businessLoading) {
-    return <div className="text-gray-400 text-center py-16">Loading...</div>;
+    return (
+      <div className="w-full h-[50vh] flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-gray-500">Loading team information...</p>
+        </div>
+      </div>
+    );
   }
 
+  const getRoleBadgeColor = (role: string) => {
+    switch (role.toLowerCase()) {
+      case 'technician': return 'bg-blue-100 text-blue-800';
+      case 'manager': return 'bg-purple-100 text-purple-800';
+      case 'dispatcher': return 'bg-green-100 text-green-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getRoleIcon = (role: string) => {
+    switch (role.toLowerCase()) {
+      case 'technician': return <UserCircle className="h-4 w-4" />;
+      case 'manager': return <Shield className="h-4 w-4" />;
+      case 'dispatcher': return <Phone className="h-4 w-4" />;
+      default: return <User className="h-4 w-4" />;
+    }
+  };
+
   return (
-    <div>
+    <div className="px-4 py-6">
       <div className="flex items-center justify-between mb-8">
-        <h1 className="text-2xl font-bold">Workers</h1>
-        <Button onClick={() => setShowAdd(true)} className="flex items-center gap-2">
+        <div>
+          <h1 className="text-2xl font-bold">Team Management</h1>
+          <p className="text-gray-500 text-sm mt-1">Manage your workers and team members</p>
+        </div>
+        <Button onClick={() => setShowAdd(true)} className="flex items-center gap-2 bg-primary hover:bg-primary/90">
           <Plus className="h-4 w-4" /> Add Worker
         </Button>
       </div>
-      {loading ? (
-        <div className="text-gray-400 text-center py-16">Loading...</div>
-      ) : workers.length === 0 ? (
-        <div className="text-center py-16">
-          <div className="text-gray-400 mb-4">No workers added yet.</div>
-          <Button onClick={() => setShowAdd(true)} className="flex items-center gap-2 mx-auto">
-            <Plus className="h-4 w-4" /> Add Your First Worker
-          </Button>
+      
+      {workersError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6">
+          Error loading workers: {workersError.message}
         </div>
-      ) : (
-        <div className="space-y-4">
-          {workers.map(worker => (
-            <div key={worker.id} className="flex items-center justify-between bg-white rounded-lg border p-4 shadow-sm">
-              <div>
-                <div className="font-bold">{worker.name}</div>
-                <div className="text-sm text-gray-500">{worker.email} {worker.phone && `| ${worker.phone}`}</div>
-                <div className="text-xs text-gray-400 mt-1">{worker.role}</div>
-              </div>
-              <Button variant="ghost" size="icon" onClick={() => handleDelete(worker.id)}>
-                <Trash2 className="h-5 w-5 text-red-500" />
-              </Button>
+      )}
+      
+      {loading ? (
+        <div className="w-full h-[30vh] flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-gray-500">Loading workers...</p>
+          </div>
+        </div>
+      ) : workers.length === 0 ? (
+        <Card className="border border-dashed border-gray-300 bg-gray-50">
+          <CardContent className="p-10 text-center">
+            <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+              <User className="h-8 w-8 text-primary" />
             </div>
+            <h3 className="text-lg font-medium mb-2">No workers added yet</h3>
+            <p className="text-gray-500 mb-6 max-w-md mx-auto">
+              Add your first team member to start assigning jobs and managing your workforce.
+            </p>
+            <Button onClick={() => setShowAdd(true)} className="flex items-center gap-2 mx-auto">
+              <Plus className="h-4 w-4" /> Add Your First Worker
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {workers.map(worker => (
+            <Card key={worker.id} className="overflow-hidden hover:shadow-md transition-shadow duration-200">
+              <CardContent className="p-0">
+                <div className="p-6 flex flex-col h-full">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                      <User className="h-6 w-6 text-primary" />
+                    </div>
+                    
+                    <div className="flex items-center">
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${getRoleBadgeColor(worker.role)}`}>
+                        {getRoleIcon(worker.role)}
+                        {worker.role}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <h3 className="font-bold text-lg mb-1">{worker.name}</h3>
+                  
+                  <div className="space-y-2 mb-4 flex-grow">
+                    <div className="flex items-center text-sm text-gray-600">
+                      <Mail className="h-4 w-4 mr-2 text-gray-400" />
+                      {worker.email}
+                    </div>
+                    {worker.phone && (
+                      <div className="flex items-center text-sm text-gray-600">
+                        <Phone className="h-4 w-4 mr-2 text-gray-400" />
+                        {worker.phone}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="border-t pt-4 mt-auto">
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => handleDelete(worker.id)}
+                      className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           ))}
         </div>
       )}
+
       {/* Add Worker Modal */}
       {showAdd && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-8 shadow-lg w-full max-w-md">
-            <h2 className="text-lg font-bold mb-4">Add Worker</h2>
-            {error && <div className="text-red-500 text-sm mb-2">{error}</div>}
-            <form onSubmit={handleAdd} className="space-y-4">
-              <div>
-                <Label htmlFor="name">Name</Label>
-                <Input id="name" name="name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required />
-              </div>
-              <div>
-                <Label htmlFor="email">Email</Label>
-                <Input id="email" name="email" type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
-              </div>
-              <div>
-                <Label htmlFor="phone">Phone</Label>
-                <Input id="phone" name="phone" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
-              </div>
-              <div>
-                <Label htmlFor="role">Role</Label>
-                <Input id="role" name="role" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} />
-              </div>
-              <div className="flex gap-2 justify-end">
-                <Button type="button" variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
-                <Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save Worker'}</Button>
-              </div>
-            </form>
-          </div>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-md shadow-lg">
+            <CardContent className="p-6">
+              <h2 className="text-xl font-bold mb-6">Add Team Member</h2>
+              
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded mb-4">
+                  {error}
+                </div>
+              )}
+              
+              <form onSubmit={handleAdd} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name" className="font-medium">Full Name</Label>
+                  <Input 
+                    id="name" 
+                    name="name" 
+                    value={form.name} 
+                    onChange={e => setForm(f => ({ ...f, name: e.target.value }))} 
+                    placeholder="Enter full name"
+                    className="border-gray-300"
+                    required 
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="email" className="font-medium">Email Address</Label>
+                  <Input 
+                    id="email" 
+                    name="email" 
+                    type="email" 
+                    value={form.email} 
+                    onChange={e => setForm(f => ({ ...f, email: e.target.value }))} 
+                    placeholder="Enter email address"
+                    className="border-gray-300"
+                    required 
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="phone" className="font-medium">Phone Number</Label>
+                  <Input 
+                    id="phone" 
+                    name="phone" 
+                    type="tel" 
+                    value={form.phone} 
+                    onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} 
+                    placeholder="Enter phone number"
+                    className="border-gray-300"
+                    required 
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="role" className="font-medium">Role</Label>
+                  <Select 
+                    value={form.role} 
+                    onValueChange={value => setForm(f => ({ ...f, role: value as 'technician' | 'dispatcher' | 'manager' }))}
+                  >
+                    <SelectTrigger id="role">
+                      <SelectValue placeholder="Select role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="technician">Technician</SelectItem>
+                      <SelectItem value="dispatcher">Dispatcher</SelectItem>
+                      <SelectItem value="manager">Manager</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="flex justify-end gap-3 mt-6">
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={() => setShowAdd(false)}
+                    disabled={saving}
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    type="submit"
+                    disabled={saving}
+                  >
+                    {saving ? 'Adding...' : 'Add Worker'}
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>

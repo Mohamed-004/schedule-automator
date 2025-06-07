@@ -1,0 +1,6 @@
+@echo off
+echo Cleaning .next directory...
+rmdir /s /q .next
+echo Starting Next.js development server...
+set NODE_OPTIONS=--max-old-space-size=4096
+npx next dev --port 3333 --no-symlinks 

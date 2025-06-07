@@ -54,6 +54,8 @@ export type Job = {
   completed_at: string | null
   location: string
   client_name: string
+  worker_name?: string
+  worker?: Worker | null
   created_at: string
   updated_at: string
 }
@@ -93,6 +95,46 @@ export type Notification = {
   read: boolean
   created_at: string
   updated_at: string
+}
+
+// Worker Availability Types
+export interface WeeklyAvailability {
+  id: string;
+  worker_id: string;
+  day_of_week: number; // 0-6 (Sunday-Saturday)
+  start_time: string; // HH:MM:SS
+  end_time: string; // HH:MM:SS
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AvailabilityException {
+  id: string;
+  worker_id: string;
+  date: string; // YYYY-MM-DD
+  is_available: boolean;
+  start_time?: string | null; // HH:MM:SS or null for all-day
+  end_time?: string | null; // HH:MM:SS or null for all-day
+  reason?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AvailabilitySlot {
+  day: number;
+  start: string; // HH:MM format
+  end: string; // HH:MM format
+  id?: string; // For existing slots
+}
+
+export interface AvailabilityExceptionInput {
+  date: string; // YYYY-MM-DD
+  isAvailable: boolean;
+  allDay: boolean;
+  startTime?: string; // HH:MM format
+  endTime?: string; // HH:MM format
+  reason?: string;
+  id?: string; // For existing exceptions
 }
 
 // Database Schema Types
