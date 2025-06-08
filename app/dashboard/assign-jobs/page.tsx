@@ -55,21 +55,26 @@ export default async function AssignJobsPage() {
     .eq('business_id', businessId)
     .eq('status', 'active');
 
+  // Fetch job types for the form
+  const { data: jobTypes } = await supabase
+    .from('job_types')
+    .select('id, name, description, required_skills');
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
         <div className="max-w-7xl mx-auto">
             <div className="mb-8">
-                <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">
-                    Assign New Job
+                <h1 className="text-3xl font-bold text-gray-900 tracking-tight">
+                    Create and Assign a New Job
                 </h1>
-                <p className="mt-2 text-sm md:text-base text-gray-600">
-                    Fill in the details below to schedule a new job and assign it to the best available worker.
+                <p className="mt-2 text-base text-gray-600 max-w-3xl">
+                    Follow the steps to fill in job details, set a schedule, and assign the best available worker.
                 </p>
             </div>
             <AssignmentForm
                 clients={clients || []}
                 workers={workers || []}
+                jobTypes={jobTypes || []}
             />
         </div>
     </div>

@@ -220,4 +220,62 @@ export async function createJob(jobData: z.infer<typeof createJobSchema>) {
         console.error('Server action error:', e);
         return { success: false, error: 'An unexpected server error occurred.', details: e.message };
     }
+}
+
+export async function getRecommendedWorkersAction(startTime: string, endTime: string, clientId: string, jobTypeId?: string) {
+    const cookieStore = cookies() as any;
+    const supabase = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+            cookies: {
+                get: (name: string) => {
+                    return cookieStore.get(name)?.value;
+                },
+            },
+        }
+    );
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { success: false, error: 'Authentication failed.' };
+
+    const businessId = await getBusinessIdWithSupa(user.id, supabase);
+    if (!businessId) return { success: false, error: "Could not find business." };
+    
+    try {
+        const { data, error } = await supabase.rpc('get_recommended_workers', {
+            p_business_id: businessId,
+            p_job_start_time: startTime,
+            p_job_end_time: endTime,
+            p_client_id: clientId,
+            p_job_type_id: jobTypeId || null
+        });
+
+        if (error) {
+            console.error("Error fetching recommended workers:", error);
+            
+            // Fallback to regular available workers if the recommendation function fails
+            // This ensures the app still works even if the premium features aren't fully set up
+            const { data: fallbackData, error: fallbackError } = await supabase.rpc('get_available_workers', {
+                p_business_id: businessId,
+                p_job_start_time: startTime,
+                p_job_end_time: endTime,
+            });
+            
+            if (fallbackError) {
+                return { success: false, error: 'Failed to fetch workers.', details: fallbackError.message };
+            }
+            
+            return { 
+                success: true, 
+                workers: fallbackData,
+                warning: 'Recommendation engine unavailable, showing all available workers instead.'
+            };
+        }
+
+        return { success: true, workers: data };
+    } catch (e: any) {
+        console.error("Error in getRecommendedWorkersAction:", e);
+        return { success: false, error: 'An unexpected error occurred.', details: e.message };
+    }
 } 
