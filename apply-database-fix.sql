@@ -157,7 +157,6 @@ RETURNS TABLE (
 ) AS $$
 DECLARE
     v_job_date DATE;
-    v_day_of_week SMALLINT;
     v_business_timezone TEXT;
 BEGIN
     -- Get the business's timezone to ensure correct date and time calculations
@@ -166,63 +165,81 @@ BEGIN
         v_business_timezone := 'UTC'; -- Default to UTC if not set
     END IF;
 
-    -- Extract date and day of the week from the job start time, adjusted for the business's timezone.
+    -- Extract date from the job start time, adjusted for the business's timezone.
     v_job_date := (p_job_start_time AT TIME ZONE v_business_timezone)::DATE;
-    v_day_of_week := EXTRACT(DOW FROM (p_job_start_time AT TIME ZONE v_business_timezone)); -- Sunday is 0, Saturday is 6
 
     RETURN QUERY
-    WITH worker_availability AS (
-        SELECT
-            w.id,
-            w.name,
-            w.email,
-            w.phone,
-            w.role,
-            w.business_id,
-            w.status,
-            COALESCE(we.is_available, wa.is_available) as is_available,
-            COALESCE(we.start_time, wa.start_time) as start_time,
-            COALESCE(we.end_time, wa.end_time) as end_time,
-            we.id as exception_id
-        FROM
-            workers w
-        LEFT JOIN
-            worker_availability_exceptions we ON w.id = we.worker_id AND we.date = v_job_date
-        LEFT JOIN (
-            SELECT 
-                wwa.worker_id,
-                true as is_available,
-                wwa.start_time,
-                wwa.end_time
-            FROM worker_weekly_availability wwa
-            WHERE wwa.day_of_week = v_day_of_week
-        ) wa ON w.id = wa.worker_id AND we.id IS NULL
-    )
     SELECT
-        wa.id AS worker_id,
-        wa.name AS worker_name,
-        wa.email AS worker_email,
-        wa.phone AS worker_phone,
-        wa.role AS worker_role
+        w.id,
+        w.name,
+        w.email,
+        w.phone,
+        w.role
     FROM
-        worker_availability wa
+        workers w
     WHERE
-        wa.business_id = p_business_id
-        AND wa.status = 'active'
-        -- 1. Check if the worker is available for the given time
-        AND wa.is_available = true
-        AND (p_job_start_time AT TIME ZONE v_business_timezone)::TIME >= wa.start_time
-        AND (p_job_end_time AT TIME ZONE v_business_timezone)::TIME <= wa.end_time
-
-        -- 2. AND they don't have a conflicting job at the same time
+        w.business_id = p_business_id
+        AND w.status = 'active'
+        -- And the worker is available during the requested time slot
+        AND is_worker_available(w.id, p_job_start_time, p_job_end_time, v_business_timezone)
+        -- And they don't have a conflicting job at the same time
         AND NOT EXISTS (
             SELECT 1
             FROM jobs j
-            WHERE j.worker_id = wa.id
-              AND j.status NOT IN ('cancelled', 'completed')
-              -- Check for overlapping time intervals.
-              AND (p_job_start_time, p_job_end_time) OVERLAPS (j.scheduled_at, j.scheduled_at + (COALESCE(j.duration_minutes, 60) * INTERVAL '1 minute'))
+            WHERE j.worker_id = w.id
+              AND j.status NOT IN ('cancelled', 'completed', 'declined')
+              AND (p_job_start_time, p_job_end_time) OVERLAPS (j.scheduled_at, j.scheduled_at + (j.duration_minutes * INTERVAL '1 minute'))
         );
+END;
+$$ LANGUAGE plpgsql;
+
+-- Helper function to check a single worker's availability, respecting exceptions
+CREATE OR REPLACE FUNCTION is_worker_available(
+    p_worker_id UUID,
+    p_job_start_time TIMESTAMPTZ,
+    p_job_end_time TIMESTAMPTZ,
+    p_business_timezone TEXT
+)
+RETURNS BOOLEAN AS $$
+DECLARE
+    v_exception worker_availability_exceptions%ROWTYPE;
+    v_job_date DATE;
+    v_job_start_time_local TIME;
+    v_job_end_time_local TIME;
+    v_day_of_week SMALLINT;
+    is_available BOOLEAN := false;
+BEGIN
+    v_job_date := (p_job_start_time AT TIME ZONE p_business_timezone)::DATE;
+    v_job_start_time_local := (p_job_start_time AT TIME ZONE p_business_timezone)::TIME;
+    v_job_end_time_local := (p_job_end_time AT TIME ZONE p_business_timezone)::TIME;
+    v_day_of_week := EXTRACT(DOW FROM v_job_date); -- Sunday is 0
+
+    -- First, check for an exception on the given date
+    SELECT * INTO v_exception FROM worker_availability_exceptions
+    WHERE worker_id = p_worker_id AND date = v_job_date;
+
+    IF FOUND THEN
+        -- An exception exists. Availability is determined *solely* by this exception.
+        IF v_exception.is_available THEN
+            -- Check if the job time falls within the exception's available window.
+            IF v_job_start_time_local >= v_exception.start_time AND v_job_end_time_local <= v_exception.end_time THEN
+                is_available := true;
+            END IF;
+        END IF;
+        -- If exception.is_available is false, the worker is unavailable all day. 'is_available' remains false.
+    ELSE
+        -- No exception found. Check the default weekly availability.
+        SELECT EXISTS (
+            SELECT 1
+            FROM worker_weekly_availability
+            WHERE worker_id = p_worker_id
+              AND day_of_week = v_day_of_week
+              AND v_job_start_time_local >= start_time
+              AND v_job_end_time_local <= end_time
+        ) INTO is_available;
+    END IF;
+
+    RETURN is_available;
 END;
 $$ LANGUAGE plpgsql;
 

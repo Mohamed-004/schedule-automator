@@ -47,6 +47,7 @@ import {
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { addMinutes } from "date-fns";
 
 const assignmentFormSchema = z.object({
     title: z.string().min(2, "Title must be at least 2 characters."),
@@ -87,6 +88,7 @@ interface WorkerSchedule {
     daily_exception_reason: string | null;
     exception_start_time?: string | null;
     exception_end_time?: string | null;
+    daily_availability_slots: { start_time: string; end_time: string }[] | null;
 }
 
 interface AssignmentFormProps {
@@ -99,6 +101,172 @@ const timeSlots = Array.from({ length: 24 * 4 }, (_, i) => {
     const minutes = totalMinutes % 60;
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 });
+
+function timeToMinutes(timeStr: string): number {
+    if (!timeStr) return 0;
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    return hours * 60 + minutes;
+}
+
+function DailyScheduleVisualizer({
+    availability,
+    booked,
+    potentialBooking,
+    isPotentialBookingValid,
+}: {
+    availability: { start_time: string; end_time: string }[] | null;
+    booked: { title: string; start_time: string; end_time: string }[] | null;
+    potentialBooking?: { start_time: string; end_time: string };
+    isPotentialBookingValid?: boolean;
+}) {
+    const START_HOUR = 6;
+    const END_HOUR = 22;
+    const totalHours = END_HOUR - START_HOUR;
+
+    const availabilityMinutes = (availability || []).map(slot => ({
+        start: timeToMinutes(slot.start_time),
+        end: timeToMinutes(slot.end_time),
+    }));
+
+    const bookedMinutes = (booked || []).map(job => {
+        const start = new Date(job.start_time);
+        const end = new Date(job.end_time);
+        return {
+            start: start.getHours() * 60 + start.getMinutes(),
+            end: end.getHours() * 60 + end.getMinutes(),
+            title: job.title
+        };
+    });
+
+    const getSlotInfo = (slotMinutes: number) => {
+        const endSlotMinutes = slotMinutes + 60;
+        let isBooked = false;
+        let isAvailable = false;
+        let bookedTitle = '';
+
+        for (const job of bookedMinutes) {
+            if (Math.max(slotMinutes, job.start) < Math.min(endSlotMinutes, job.end)) {
+                isBooked = true;
+                bookedTitle = job.title;
+                break;
+            }
+        }
+        
+        for (const avail of availabilityMinutes) {
+            if (Math.max(slotMinutes, avail.start) < Math.min(endSlotMinutes, avail.end)) {
+                 isAvailable = true;
+                 break;
+            }
+        }
+
+        if (isBooked) return { status: 'booked', title: bookedTitle };
+        if (isAvailable) return { status: 'available', title: 'Available' };
+        return { status: 'unavailable', title: 'Unavailable' };
+    };
+
+    return (
+         <div className="w-full">
+            <div className="grid text-xs text-muted-foreground" style={{ gridTemplateColumns: `repeat(${totalHours}, 1fr)` }}>
+                 {Array.from({ length: totalHours }, (_, i) => i + START_HOUR).map(hour => (
+                    <div key={hour} className="text-center">
+                       {hour % 2 === 0 ? format(set(new Date(), { hours: hour }), 'ha') : ''}
+                    </div>
+                ))}
+            </div>
+            <div className="relative w-full h-8 mt-1 bg-muted/30 rounded-md overflow-hidden border">
+                 {/* Vertical grid lines */}
+                 {Array.from({ length: totalHours -1 }, (_, i) => (
+                    <div key={`line-${i}`} className="absolute top-0 h-full w-px bg-muted/50" style={{ left: `calc(${(i + 1) / totalHours * 100}%)` }} />
+                ))}
+
+                {/* Available slots */}
+                {availabilityMinutes.map((slot, i) => (
+                     <TooltipProvider key={`avail-${i}`} delayDuration={100}>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <div
+                                    className="absolute top-0 h-full bg-green-200 dark:bg-green-800/50"
+                                    style={{
+                                        left: `${((slot.start / 60) - START_HOUR) / totalHours * 100}%`,
+                                        width: `${(slot.end - slot.start) / 60 / totalHours * 100}%`,
+                                    }}
+                                />
+                            </TooltipTrigger>
+                            <TooltipContent>Available</TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                ))}
+
+                {/* Booked slots */}
+                {bookedMinutes.map((slot, i) => (
+                    <TooltipProvider key={`booked-${i}`} delayDuration={100}>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                 <div
+                                    className="absolute top-0 h-full bg-blue-400 dark:bg-blue-600 border-x-2 border-background"
+                                    style={{
+                                        left: `${((slot.start / 60) - START_HOUR) / totalHours * 100}%`,
+                                        width: `${(slot.end - slot.start) / 60 / totalHours * 100}%`,
+                                    }}
+                                />
+                            </TooltipTrigger>
+                            <TooltipContent>{slot.title}</TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                ))}
+
+                {/* Potential Booking */}
+                {potentialBooking && timeToMinutes(potentialBooking.end_time) > timeToMinutes(potentialBooking.start_time) && (
+                    <TooltipProvider delayDuration={100}>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <div
+                                    className={cn(
+                                        "absolute top-0 h-full border-2 z-10",
+                                        isPotentialBookingValid 
+                                            ? "bg-purple-400/50 border-purple-600 dark:bg-purple-800/50 dark:border-purple-500"
+                                            : "bg-red-400/50 border-red-600 dark:bg-red-800/50 dark:border-red-500"
+                                    )}
+                                    style={{
+                                        left: `${((timeToMinutes(potentialBooking.start_time) / 60) - START_HOUR) / totalHours * 100}%`,
+                                        width: `${(timeToMinutes(potentialBooking.end_time) - timeToMinutes(potentialBooking.start_time)) / 60 / totalHours * 100}%`,
+                                    }}
+                                />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>Potential Job: {formatTime(potentialBooking.start_time)} - {formatTime(potentialBooking.end_time)}</p>
+                                {!isPotentialBookingValid && <p className="font-semibold text-red-600 dark:text-red-400">Conflicts with availability.</p>}
+                            </TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                )}
+            </div>
+             <div className="flex items-center justify-end gap-4 text-xs pt-2">
+                 <div className="flex items-center gap-1.5">
+                    <div className="h-3 w-3 rounded-sm bg-muted/60 border"></div>
+                    <span>Unavailable</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                    <div className="h-3 w-3 rounded-sm bg-green-200 dark:bg-green-800/50 border"></div>
+                    <span>Available</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                    <div className="h-3 w-3 rounded-sm bg-blue-400 dark:bg-blue-600 border"></div>
+                    <span>Booked</span>
+                </div>
+                {potentialBooking && (
+                    <div className="flex items-center gap-1.5">
+                        <div className={cn("h-3 w-3 rounded-sm border", 
+                            isPotentialBookingValid 
+                                ? "bg-purple-400/50 border-purple-600" 
+                                : "bg-red-400/50 border-red-600")}></div>
+                        <span>Potential Job</span>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
 
 function formatDuration(minutes: number): string {
     if (minutes <= 0) return "End time must be after start time.";
@@ -121,11 +289,20 @@ function formatTime(timeStr: string) {
     // It assumes the date part is irrelevant
     const today = new Date();
     const [hours, minutes] = timeStr.split(':').map(Number);
+    if(isNaN(hours) || isNaN(minutes)) return "Invalid Time";
     const date = set(today, { hours, minutes, seconds: 0, milliseconds: 0 });
     return format(date, 'p');
 }
 
-function WorkerScheduleDisplay({ worker, schedule, isLoading, isSelected, scheduledDate }: { worker: Worker, schedule: WorkerSchedule | null, isLoading: boolean, isSelected: boolean, scheduledDate: Date | undefined }) {
+function WorkerScheduleDisplay({ worker, schedule, isLoading, isSelected, scheduledDate, potentialBooking, isSelectable }: { 
+    worker: Worker, 
+    schedule: WorkerSchedule | null, 
+    isLoading: boolean, 
+    isSelected: boolean, 
+    scheduledDate: Date | undefined,
+    potentialBooking?: { start_time: string; end_time: string },
+    isSelectable: boolean,
+}) {
     if (!scheduledDate) {
          return (
             <div className="text-sm text-center text-muted-foreground py-4">
@@ -134,20 +311,33 @@ function WorkerScheduleDisplay({ worker, schedule, isLoading, isSelected, schedu
         );
     }
     
+    const isUnavailableAllDay = schedule?.daily_exception_reason && !schedule.exception_start_time;
+
     return (
-        <div className={cn("w-full space-y-3 pt-4 mt-4 border-t", isSelected ? "border-emerald-200 dark:border-emerald-800" : "border-muted")}>
+        <div className={cn("w-full space-y-4 pt-4 mt-4 border-t", isSelected ? "border-emerald-200 dark:border-emerald-800" : "border-muted")}>
             {isLoading ? (
                 <div className="flex items-center justify-center text-sm text-muted-foreground py-4">
                     <Loader2 className="h-5 w-5 mr-3 animate-spin" />
                     <span>Loading schedule...</span>
                 </div>
             ) : schedule ? (
-                <div className="space-y-4 text-sm">
+                <>
+                    {!isSelectable && potentialBooking && (
+                        <Alert variant="destructive" className="mt-2">
+                            <AlertTriangle className="h-4 w-4" />
+                            <AlertTitle>Scheduling Conflict</AlertTitle>
+                            <AlertDescription>
+                                The selected time {formatTime(potentialBooking.start_time)} - {formatTime(potentialBooking.end_time)} is outside this worker's available hours.
+                            </AlertDescription>
+                        </Alert>
+                    )}
                     {schedule.daily_exception_reason && (
-                        <Alert variant="default" className="bg-blue-50 border-blue-200 dark:bg-blue-950 dark:border-blue-800">
-                            <AlertTriangle className="h-4 w-4 text-blue-500" />
-                            <AlertTitle className="text-blue-800 dark:text-blue-300">Schedule Note</AlertTitle>
-                            <AlertDescription className="text-blue-700 dark:text-blue-400">
+                        <Alert variant="default" className={cn(isUnavailableAllDay ? "bg-amber-50 border-amber-200 dark:bg-amber-950 dark:border-amber-800" : "bg-blue-50 border-blue-200 dark:bg-blue-950 dark:border-blue-800")}>
+                            <AlertTriangle className={cn("h-4 w-4", isUnavailableAllDay ? "text-amber-500" : "text-blue-500")} />
+                            <AlertTitle className={cn(isUnavailableAllDay ? "text-amber-800 dark:text-amber-300" : "text-blue-800 dark:text-blue-300")}>
+                                {isUnavailableAllDay ? "Worker Unavailable" : "Schedule Note"}
+                            </AlertTitle>
+                            <AlertDescription className={cn(isUnavailableAllDay ? "text-amber-700 dark:text-amber-400" : "text-blue-700 dark:text-blue-400")}>
                                 {schedule.daily_exception_reason}
                                 {schedule.exception_start_time && schedule.exception_end_time && (
                                      <div className="mt-2">
@@ -164,66 +354,119 @@ function WorkerScheduleDisplay({ worker, schedule, isLoading, isSelected, schedu
                         </Alert>
                     )}
                     
-                    {/* Weekly Progress */}
-                    <div className="space-y-1.5">
-                        <div className="flex justify-between items-center text-sm">
-                            <span className="text-muted-foreground">Weekly Hours</span>
-                            <span className="font-semibold text-foreground">{(schedule.weekly_hours_worked ?? 0).toFixed(1)}h / {(schedule.weekly_hours_goal ?? 0).toFixed(1)}h</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+                        {/* Weekly Progress */}
+                        <div className="space-y-1.5">
+                            <div className="flex justify-between items-center text-sm">
+                                <span className="text-muted-foreground">Weekly Hours</span>
+                                <span className="font-semibold text-foreground">{(schedule.weekly_hours_worked ?? 0).toFixed(1)}h / {(schedule.weekly_hours_goal ?? 0).toFixed(1)}h</span>
+                            </div>
+                            <TooltipProvider>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <Progress value={((schedule.weekly_hours_worked ?? 0) / (schedule.weekly_hours_goal || 1)) * 100} className="h-2" />
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        <p>{(schedule.weekly_hours_worked ?? 0).toFixed(1)} hours logged out of {(schedule.weekly_hours_goal ?? 0).toFixed(1)} scheduled this week.</p>
+                                    </TooltipContent>
+                                </Tooltip>
+                            </TooltipProvider>
                         </div>
-                        <TooltipProvider>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Progress value={((schedule.weekly_hours_worked ?? 0) / (schedule.weekly_hours_goal || 1)) * 100} className="h-2" />
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                    <p>{(schedule.weekly_hours_worked ?? 0).toFixed(1)} hours logged out of {(schedule.weekly_hours_goal ?? 0).toFixed(1)} scheduled this week.</p>
-                                </TooltipContent>
-                            </Tooltip>
-                        </TooltipProvider>
-                    </div>
-                    
-                    {/* Daily Progress */}
-                    <div className="space-y-1.5">
-                        <div className="flex justify-between items-center text-sm">
-                            <span className="text-muted-foreground">Hours for {format(scheduledDate, "MMM d")}</span>
-                            <span className="font-semibold text-foreground">{(schedule.daily_hours_worked ?? 0).toFixed(1)}h / {(schedule.daily_hours_goal ?? 0).toFixed(1)}h</span>
+                        
+                        {/* Daily Progress */}
+                        <div className="space-y-1.5">
+                            <div className="flex justify-between items-center text-sm">
+                                <span className="text-muted-foreground">Hours for {format(scheduledDate, "MMM d")}</span>
+                                <span className="font-semibold text-foreground">{(schedule.daily_hours_worked ?? 0).toFixed(1)}h / {(schedule.daily_hours_goal ?? 0).toFixed(1)}h</span>
+                            </div>
+                             <TooltipProvider>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <Progress value={((schedule.daily_hours_worked ?? 0) / (schedule.daily_hours_goal || 1)) * 100} className="h-2" />
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        <p>{(schedule.daily_hours_worked ?? 0).toFixed(1)} hours logged out of {(schedule.daily_hours_goal ?? 0).toFixed(1)} scheduled for this day.</p>
+                                    </TooltipContent>
+                                </Tooltip>
+                            </TooltipProvider>
                         </div>
-                         <TooltipProvider>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Progress value={((schedule.daily_hours_worked ?? 0) / (schedule.daily_hours_goal || 1)) * 100} className="h-2" />
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                    <p>{(schedule.daily_hours_worked ?? 0).toFixed(1)} hours logged out of {(schedule.daily_hours_goal ?? 0).toFixed(1)} scheduled for this day.</p>
-                                </TooltipContent>
-                            </Tooltip>
-                        </TooltipProvider>
                     </div>
 
                     <div className="space-y-2 pt-2">
-                        <p className="font-semibold text-sm">Booked Slots</p>
-                        {schedule.daily_schedule && schedule.daily_schedule.length > 0 ? (
-                            <div className="space-y-1">
-                                {schedule.daily_schedule.map((job, i) => (
-                                    <div key={i} className="flex items-center gap-3 text-sm p-2 rounded-md bg-background border">
-                                        <Clock className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                                        <span className="font-mono text-xs text-muted-foreground">{format(new Date(job.start_time), 'p')} - {format(new Date(job.end_time), 'p')}</span>
-                                        <span className="font-medium text-foreground/90 truncate flex-1 text-right" title={job.title}>{job.title}</span>
-                                    </div>
-                                ))}
+                        <p className="font-semibold text-sm">Daily Schedule</p>
+                         {isUnavailableAllDay ? (
+                            <div className="text-center text-muted-foreground italic py-8 border rounded-lg border-dashed bg-background">
+                                <p>This worker is unavailable for the entire day.</p>
                             </div>
-                        ) : (
-                            <div className="text-center text-muted-foreground italic py-4 border rounded-lg border-dashed">
-                                <p>This worker is free all day.</p>
-                            </div>
-                        )}
+                         ) : (
+                            <DailyScheduleVisualizer 
+                                availability={schedule.daily_availability_slots}
+                                booked={schedule.daily_schedule}
+                                potentialBooking={potentialBooking}
+                                isPotentialBookingValid={isSelectable}
+                            />
+                         )}
                     </div>
-                </div>
+                </>
             ) : (
                 <p className="text-sm text-center text-destructive py-4">Could not load schedule. Please try again.</p>
             )}
         </div>
     );
+}
+
+function isTimeWithinAvailability(startTimeStr: string, endTimeStr: string, availabilitySlots: { start_time: string; end_time: string }[] | null): boolean {
+    if (!availabilitySlots || availabilitySlots.length === 0) return false;
+    
+    // Convert job times to minutes for comparison
+    const [startHour, startMin] = startTimeStr.split(':').map(Number);
+    const [endHour, endMin] = endTimeStr.split(':').map(Number);
+    const jobStartMinutes = startHour * 60 + startMin;
+    const jobEndMinutes = endHour * 60 + endMin;
+    
+    // Check if this is an overnight job (end time is earlier in the day than start time)
+    const isOvernight = jobEndMinutes < jobStartMinutes;
+    
+    if (isOvernight) {
+        // For overnight jobs, the worker must be available:
+        // 1. From the job start time until midnight on the first day
+        // 2. From midnight until the job end time on the second day
+        
+        // Check for any availability slot that contains the start time through midnight
+        const firstDayAvailable = availabilitySlots && availabilitySlots.some(slot => {
+            const [slotStartHour, slotStartMin] = slot.start_time.split(':').map(Number);
+            const [slotEndHour, slotEndMin] = slot.end_time.split(':').map(Number);
+            const slotStartMinutes = slotStartHour * 60 + slotStartMin;
+            const slotEndMinutes = slotEndHour * 60 + slotEndMin;
+            
+            // Check if slot covers from job start time to midnight (23:59)
+            return jobStartMinutes >= slotStartMinutes && 
+                   // Either the slot ends at midnight or extends to the next day
+                   (slotEndMinutes >= 23 * 60 + 59 || slotEndMinutes < slotStartMinutes);
+        });
+        
+        if (!firstDayAvailable) return false;
+        
+        // For the second day, we need to ensure there's an availability slot 
+        // that starts at midnight (00:00) and extends at least to the job end time
+        // We're assuming the UI only shows the worker's schedule for a single day,
+        // so we can't actually verify this part entirely from the frontend.
+        // For this reason, we're also relying on the backend SQL validation.
+        
+        // For simplicity, we'll return false for overnight jobs in the UI
+        // to avoid showing workers who are likely unavailable on the next day
+        return false;
+    } else {
+        // Regular same-day job - check if job time falls entirely within any availability slot
+        return availabilitySlots.some(slot => {
+            const [slotStartHour, slotStartMin] = slot.start_time.split(':').map(Number);
+            const [slotEndHour, slotEndMin] = slot.end_time.split(':').map(Number);
+            const slotStartMinutes = slotStartHour * 60 + slotStartMin;
+            const slotEndMinutes = slotEndHour * 60 + slotEndMin;
+            
+            return jobStartMinutes >= slotStartMinutes && jobEndMinutes <= slotEndMinutes;
+        });
+    }
 }
 
 export function AssignmentForm({ clients: initialClients }: AssignmentFormProps) {
@@ -300,6 +543,11 @@ export function AssignmentForm({ clients: initialClients }: AssignmentFormProps)
                 let endTime = potentialEndTime;
                 if (potentialEndTime.getTime() <= startTime.getTime()) {
                     endTime = addDays(potentialEndTime, 1);
+                    // Add a warning toast for overnight jobs
+                    toast.warning("Overnight Job Detected", {
+                        description: "This job spans multiple days. Worker availability for overnight jobs is limited and may require manual verification.",
+                        duration: 5000,
+                    });
                 }
                 
                 const durationInMinutes = differenceInMinutes(endTime, startTime);
@@ -616,6 +864,12 @@ export function AssignmentForm({ clients: initialClients }: AssignmentFormProps)
                                     {calculatedDuration && (
                                         <FormDescription>
                                             Total duration: <span className="font-semibold">{calculatedDuration}</span>
+                                            {startTimeStr && endTimeStr && timeToMinutes(endTimeStr) < timeToMinutes(startTimeStr) && (
+                                                <div className="mt-2 flex items-center space-x-2 text-amber-600 dark:text-amber-500">
+                                                    <AlertTriangle className="h-4 w-4" />
+                                                    <span>This is an overnight job spanning multiple days.</span>
+                                                </div>
+                                            )}
                                         </FormDescription>
                                     )}
                                 </CardContent>
@@ -647,39 +901,63 @@ export function AssignmentForm({ clients: initialClients }: AssignmentFormProps)
                                                             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                                                         </div>
                                                     ) : availableWorkers.length > 0 ? (
-                                                        availableWorkers.map((worker) => (
-                                                            <FormItem key={worker.id} className="w-full">
-                                                                <FormControl>
-                                                                     <Label htmlFor={worker.id} className="font-medium flex-1 cursor-pointer w-full">
-                                                                        <RadioGroupItem value={worker.id} id={worker.id} className="sr-only" />
-                                                                        <div className={cn(
-                                                                            "flex flex-col items-start gap-4 p-4 rounded-xl border-2 transition-all",
-                                                                            field.value === worker.id ? "bg-emerald-50/50 border-emerald-300 dark:bg-emerald-900/20 dark:border-emerald-700" : "border-muted/30 hover:bg-accent hover:border-accent-foreground/20"
-                                                                        )}>
-                                                                            <div className="flex items-center gap-4 w-full">
-                                                                                <Avatar className="h-12 w-12">
-                                                                                    <AvatarImage src={worker.avatarUrl ?? undefined} alt={worker.name} />
-                                                                                    <AvatarFallback className="text-lg">{getInitials(worker.name)}</AvatarFallback>
-                                                                                </Avatar>
-                                                                                <div className="flex-1">
-                                                                                    <p className="font-bold text-base">{worker.name}</p>
-                                                                                    <p className="text-sm text-muted-foreground">{worker.role || "Team Member"}</p>
-                                                                                </div>
-                                                                                <Check className={cn("h-6 w-6 text-emerald-500 transition-opacity", field.value === worker.id ? "opacity-100" : "opacity-0")} />
-                                                                            </div>
-                                                                            <WorkerScheduleDisplay 
-                                                                                worker={worker}
-                                                                                schedule={workerSchedules[worker.id] ?? null}
-                                                                                isLoading={schedulesLoading[worker.id] ?? false}
-                                                                                isSelected={field.value === worker.id}
-                                                                                scheduledDate={scheduledDate}
+                                                        availableWorkers.map((worker) => {
+                                                            const schedule = workerSchedules[worker.id];
+                                                            const isSelectable = schedule ? isTimeWithinAvailability(startTimeStr, endTimeStr, schedule.daily_availability_slots) : false;
+                                                            const potentialBooking = startTimeStr && endTimeStr ? { start_time: startTimeStr, end_time: endTimeStr } : undefined;
+                                                            
+                                                            return (
+                                                                <FormItem key={worker.id} className="w-full">
+                                                                    <FormControl>
+                                                                        <Label 
+                                                                            htmlFor={worker.id} 
+                                                                            className={cn(
+                                                                                "font-medium flex-1 w-full",
+                                                                                isSelectable ? "cursor-pointer" : "cursor-not-allowed"
+                                                                            )}
+                                                                        >
+                                                                            <RadioGroupItem 
+                                                                                value={worker.id} 
+                                                                                id={worker.id} 
+                                                                                className="sr-only" 
+                                                                                disabled={!isSelectable} 
                                                                             />
-                                                                        </div>
-                                                                    </Label>
-                                                                </FormControl>
-                                                                <FormMessage className="pt-2" />
-                                                            </FormItem>
-                                                        ))
+                                                                            <div className={cn(
+                                                                                "flex flex-col items-start gap-4 p-4 rounded-xl border-2 transition-all",
+                                                                                field.value === worker.id 
+                                                                                    ? "bg-emerald-50/50 border-emerald-300 dark:bg-emerald-900/20 dark:border-emerald-700" 
+                                                                                    : "border-muted/30",
+                                                                                isSelectable 
+                                                                                    ? "hover:bg-accent hover:border-accent-foreground/20"
+                                                                                    : "bg-muted/20 border-dashed opacity-70"
+                                                                            )}>
+                                                                                <div className="flex items-center gap-4 w-full">
+                                                                                    <Avatar className="h-12 w-12">
+                                                                                        <AvatarImage src={worker.avatarUrl ?? undefined} alt={worker.name} />
+                                                                                        <AvatarFallback className="text-lg">{getInitials(worker.name)}</AvatarFallback>
+                                                                                    </Avatar>
+                                                                                    <div className="flex-1">
+                                                                                        <p className="font-bold text-base">{worker.name}</p>
+                                                                                        <p className="text-sm text-muted-foreground">{worker.role || "Team Member"}</p>
+                                                                                    </div>
+                                                                                    <Check className={cn("h-6 w-6 text-emerald-500 transition-opacity", field.value === worker.id ? "opacity-100" : "opacity-0")} />
+                                                                                </div>
+                                                                                <WorkerScheduleDisplay 
+                                                                                    worker={worker}
+                                                                                    schedule={workerSchedules[worker.id] ?? null}
+                                                                                    isLoading={schedulesLoading[worker.id] ?? false}
+                                                                                    isSelected={field.value === worker.id}
+                                                                                    scheduledDate={scheduledDate}
+                                                                                    potentialBooking={potentialBooking}
+                                                                                    isSelectable={isSelectable}
+                                                                                />
+                                                                            </div>
+                                                                        </Label>
+                                                                    </FormControl>
+                                                                    <FormMessage className="pt-2" />
+                                                                </FormItem>
+                                                            );
+                                                        })
                                                     ) : (
                                                         <div key="no-workers" className="text-sm text-muted-foreground text-center p-4 border rounded-lg bg-background">
                                                             No workers available for this time. Adjust the schedule to see options.
