@@ -2,6 +2,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { SupabaseProvider } from "@/lib/SupabaseProvider";
 import { Toaster } from "@/components/ui/toaster";
+import TopProgressBar from "@/components/ui/TopProgressBar";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -14,6 +15,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <SupabaseProvider>
+          <TopProgressBar />
           {children}
           <Toaster />
         </SupabaseProvider>

@@ -1,0 +1,144 @@
+.custom-calendar-popover {
+  padding: 2rem !important;
+  border-radius: 1.5rem !important;
+  box-shadow: 0 16px 64px 0 rgba(0,0,0,0.15) !important;
+  border: 1px solid #e5e7eb !important;
+  background: #ffffff !important;
+  min-width: 380px !important;
+  z-index: 9999 !important;
+  opacity: 1 !important;
+  backdrop-filter: none !important;
+}
+
+.custom-calendar-popover .react-calendar {
+  font-size: 1.125rem !important;
+  font-weight: 500 !important;
+  background: #ffffff !important;
+  border-radius: 1.25rem !important;
+  border: none !important;
+  padding: 1rem !important;
+}
+
+.custom-calendar-popover .react-calendar__navigation {
+  background: #f8fafc !important;
+  border-radius: 1rem !important;
+  margin-bottom: 1rem !important;
+  padding: 0.5rem !important;
+}
+
+.custom-calendar-popover .react-calendar__navigation button {
+  font-size: 1.25rem !important;
+  font-weight: 600 !important;
+  padding: 0.75rem 1.25rem !important;
+  border-radius: 0.75rem !important;
+  color: #1f2937 !important;
+  background: #ffffff !important;
+  border: 1px solid #d1d5db !important;
+  transition: all 0.2s ease !important;
+  cursor: pointer !important;
+}
+
+.custom-calendar-popover .react-calendar__navigation button:hover {
+  background: #3b82f6 !important;
+  color: #ffffff !important;
+  border-color: #3b82f6 !important;
+  transform: translateY(-1px) !important;
+}
+
+.custom-calendar-popover .react-calendar__navigation button:active {
+  transform: translateY(0) !important;
+}
+
+.custom-calendar-popover .react-calendar__viewContainer {
+  background: #ffffff !important;
+}
+
+.custom-calendar-popover .react-calendar__month-view__weekdays {
+  background: #f1f5f9 !important;
+  border-radius: 0.75rem !important;
+  padding: 0.5rem 0 !important;
+  margin-bottom: 0.5rem !important;
+}
+
+.custom-calendar-popover .react-calendar__month-view__weekdays__weekday {
+  color: #475569 !important;
+  font-weight: 600 !important;
+  font-size: 0.875rem !important;
+}
+
+.custom-calendar-popover .react-calendar__tile {
+  padding: 0.875rem 0.625rem !important;
+  border-radius: 0.75rem !important;
+  transition: all 0.2s ease !important;
+  background: #ffffff !important;
+  color: #1f2937 !important;
+  border: 1px solid transparent !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  position: relative !important;
+}
+
+.custom-calendar-popover .react-calendar__tile:enabled:hover {
+  background: #e0f2fe !important;
+  color: #0369a1 !important;
+  border-color: #7dd3fc !important;
+  transform: scale(1.05) !important;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1) !important;
+}
+
+.custom-calendar-popover .react-calendar__tile--active {
+  background: #3b82f6 !important;
+  color: #ffffff !important;
+  border-color: #3b82f6 !important;
+  font-weight: 700 !important;
+  transform: scale(1.08) !important;
+  box-shadow: 0 6px 16px rgba(59,130,246,0.4) !important;
+  z-index: 1 !important;
+}
+
+.custom-calendar-popover .react-calendar__tile--now {
+  background: #fef3c7 !important;
+  color: #92400e !important;
+  border-color: #f59e0b !important;
+  font-weight: 600 !important;
+}
+
+.custom-calendar-popover .react-calendar__tile--now:hover {
+  background: #fde68a !important;
+  transform: scale(1.05) !important;
+}
+
+.custom-calendar-popover .react-calendar__tile--neighboringMonth {
+  color: #9ca3af !important;
+  opacity: 0.6 !important;
+}
+
+.custom-calendar-popover .react-calendar__tile--neighboringMonth:hover {
+  opacity: 0.8 !important;
+  background: #f3f4f6 !important;
+}
+
+/* Remove focus outline */
+.custom-calendar-popover .react-calendar button:focus {
+  outline: none !important;
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.2) !important;
+}
+
+.custom-calendar-popover .react-calendar__tile:focus {
+  outline: none !important;
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.3) !important;
+}
+
+/* Enhanced selected state animation */
+.custom-calendar-popover .react-calendar__tile--active::before {
+  content: "" !important;
+  position: absolute !important;
+  top: -2px !important;
+  left: -2px !important;
+  right: -2px !important;
+  bottom: -2px !important;
+  background: linear-gradient(45deg, #3b82f6, #1d4ed8) !important;
+  border-radius: 0.875rem !important;
+  z-index: -1 !important;
+  opacity: 0.8 !important;
+} 

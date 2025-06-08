@@ -1,7 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  swcMinify: true,
   images: {
     domains: ['localhost'],
   },
@@ -26,6 +25,10 @@ const nextConfig = {
       config.optimization.splitChunks = false;
       config.optimization.minimize = false;
     }
+
+    // Fix Supabase Realtime warning - ignore expressions in require context
+    config.module = config.module || {};
+    config.module.exprContextCritical = false;
     
     return config;
   },

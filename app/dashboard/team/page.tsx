@@ -9,10 +9,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
-import { Trash2, Plus, User, Mail, Phone, UserCircle, Shield } from 'lucide-react';
+import { Trash2, Plus, User, Mail, Phone, UserCircle, Shield, Calendar, Clock } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import type { Worker } from '@/lib/types';
+import WorkerCardSkeleton from '@/components/team/WorkerCardSkeleton';
 
 export default function TeamPage() {
+  const router = useRouter();
   const { supabase } = useSupabase();
   const { business, loading: businessLoading } = useBusiness();
   const { workers, loading, error: workersError, addWorker, deleteWorker, refresh } = useWorkers();
@@ -117,11 +120,10 @@ export default function TeamPage() {
       )}
       
       {loading ? (
-        <div className="w-full h-[30vh] flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary mx-auto mb-4"></div>
-            <p className="text-gray-500">Loading workers...</p>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <WorkerCardSkeleton key={i} />
+          ))}
         </div>
       ) : workers.length === 0 ? (
         <Card className="border border-dashed border-gray-300 bg-gray-50">
@@ -173,15 +175,29 @@ export default function TeamPage() {
                   </div>
                   
                   <div className="border-t pt-4 mt-auto">
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      onClick={() => handleDelete(worker.id)}
-                      className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Remove
-                    </Button>
+                    <div className="flex flex-col gap-2">
+                      {/* Schedule Hours Button */}
+                      <Button 
+                        variant="default"
+                        size="sm" 
+                        className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-sm transition-all duration-200 hover:shadow-md"
+                        onClick={() => router.push(`/dashboard/team/availability/${worker.id}`)}
+                      >
+                        <Calendar className="h-4 w-4 mr-2" />
+                        Schedule Hours
+                      </Button>
+                      
+                      {/* Remove Button */}
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => handleDelete(worker.id)}
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50 transition-colors duration-200"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Remove
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </CardContent>

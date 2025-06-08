@@ -7,6 +7,7 @@ import 'react-big-calendar/lib/css/react-big-calendar.css';
 import { supabase } from '@/lib/supabase-client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { AvailabilitySlot, AvailabilityException } from '@/lib/types';
+import { useToast } from '@/components/ui/use-toast';
 
 const localizer = momentLocalizer(moment);
 
@@ -28,6 +29,7 @@ export default function WorkerAvailabilityCalendar({
 }: WorkerAvailabilityCalendarProps) {
   const [events, setEvents] = useState<AvailabilityEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (workerId) {
@@ -67,12 +69,12 @@ export default function WorkerAvailabilityCalendar({
           const dayOfWeek = m.day(); // 0-6 (Sunday-Saturday)
           
           // Find slots for this day of week
-          const daySlots = weeklyData.filter((slot: AvailabilitySlot) => slot.day_of_week === dayOfWeek);
+          const daySlots = weeklyData.filter((slot: AvailabilitySlot) => slot.day === dayOfWeek);
           
           daySlots.forEach((slot: AvailabilitySlot) => {
             const slotDate = m.format('YYYY-MM-DD');
-            const start = moment(`${slotDate} ${slot.start_time}`);
-            const end = moment(`${slotDate} ${slot.end_time}`);
+            const start = moment(`${slotDate} ${slot.start}`);
+            const end = moment(`${slotDate} ${slot.end}`);
             
             calendarEvents.push({
               title: 'Available',
@@ -141,8 +143,21 @@ export default function WorkerAvailabilityCalendar({
       }
       
       setEvents(calendarEvents);
+      
+      if (calendarEvents.length === 0) {
+        toast({
+          title: 'No Availability Set',
+          description: 'This worker has no availability configured yet. Set up weekly schedule or add exceptions.',
+          variant: 'info',
+        });
+      }
     } catch (error) {
       console.error('Error loading availability:', error);
+      toast({
+        title: 'Failed to Load Calendar',
+        description: 'Unable to load worker availability. Please try refreshing the page.',
+        variant: 'destructive',
+      });
     } finally {
       setIsLoading(false);
     }
@@ -193,23 +208,25 @@ export default function WorkerAvailabilityCalendar({
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <div className="h-[500px] flex items-center justify-center">
+          <div className="h-[600px] flex items-center justify-center">
             <p>Loading availability...</p>
           </div>
         ) : (
-          <Calendar
-            localizer={localizer}
-            events={events}
-            defaultView="week"
-            views={['week']}
-            step={30}
-            timeslots={2}
-            selectable={!readOnly}
-            onSelectSlot={handleSelectSlot}
-            style={{ height: 500 }}
-            eventPropGetter={eventStyleGetter}
-            defaultDate={new Date()}
-          />
+          <div className="bg-white rounded-2xl shadow-lg p-4 mx-auto" style={{ maxWidth: 1100 }}>
+            <Calendar
+              localizer={localizer}
+              events={events}
+              defaultView="week"
+              views={['week']}
+              step={30}
+              timeslots={2}
+              selectable={!readOnly}
+              onSelectSlot={handleSelectSlot}
+              style={{ height: 550, background: 'white', borderRadius: 18, boxShadow: '0 4px 24px 0 rgba(0,0,0,0.08)' }}
+              eventPropGetter={eventStyleGetter}
+              defaultDate={new Date()}
+            />
+          </div>
         )}
       </CardContent>
     </Card>

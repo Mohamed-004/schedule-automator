@@ -11,15 +11,16 @@ export const metadata: Metadata = {
 export default async function WorkerSelfAvailabilityPage({
   params,
 }: {
-  params: { workerId: string }
+  params: Promise<{ workerId: string }>
 }) {
+  const { workerId } = await params
   const supabase = createServerClient()
   
   // Verify the worker exists
   const { data: worker, error } = await supabase
     .from('workers')
     .select('id, name')
-    .eq('id', params.workerId)
+    .eq('id', workerId)
     .single()
   
   if (error || !worker) {
@@ -32,7 +33,7 @@ export default async function WorkerSelfAvailabilityPage({
       <p className="text-muted-foreground mb-6">
         Set your weekly availability and manage time off. Changes may require approval.
       </p>
-      <WorkerAvailabilityManager initialWorkerId={params.workerId} isAdmin={false} />
+      <WorkerAvailabilityManager initialWorkerId={workerId} isAdmin={false} />
     </div>
   )
 } 

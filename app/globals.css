@@ -36,7 +36,7 @@
   }
 
   * {
-    /* Removed @apply border-border; as it causes build errors */
+    
   }
   body {
     @apply bg-background text-foreground;
@@ -71,4 +71,89 @@
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 212.7 26.8% 83.9%;
+}
+
+/*
+  Force popovers (like dropdowns and calendars) to have a solid background
+  and appear on top of other elements. This is a workaround for a style
+  conflict that was causing them to be transparent or render behind
+  other form inputs.
+*/
+[data-radix-popper-content-wrapper],
+[data-slot="popover-content"] {
+  background: hsl(var(--popover)) !important;
+  z-index: 999 !important;
+  outline: none !important;
+}
+
+/* Remove outline from command input within popovers */
+[data-slot="popover-content"] [cmdk-input] {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Style for dates on the calendar that have an exception */
+.has-exception {
+  position: relative;
+}
+
+.has-exception::after {
+  content: '';
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: hsl(var(--primary));
+}
+
+/* Style for the selected date on the assignment calendar */
+.job-day-selected {
+  position: relative;
+  font-weight: bold;
+}
+
+.job-day-selected::after {
+  content: '';
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  /* Using a different color to distinguish from exceptions, maybe accent? */
+  background-color: hsl(var(--accent-foreground));
+}
+
+/* Custom styles for react-phone-number-input */
+.PhoneInput {
+    display: flex;
+    align-items: center;
+    border: 1px solid hsl(var(--input));
+    border-radius: hsl(var(--radius));
+    transition: border-color 0.2s;
+}
+
+.PhoneInput--focus {
+    border-color: hsl(var(--ring));
+    box-shadow: 0 0 0 2px hsl(var(--ring));
+}
+
+.PhoneInputCountry {
+    margin: 0.5rem;
+    margin-right: 0.25rem;
+}
+
+.PhoneInputInput {
+    flex: 1;
+    border: none;
+    outline: none;
+    background-color: transparent;
+    padding: 0.5rem;
+    height: 2.5rem;
+    font-size: 1rem;
 }

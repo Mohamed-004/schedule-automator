@@ -7,32 +7,42 @@ import {
   AvailabilitySlot,
   AvailabilityExceptionInput
 } from '@/lib/types'
-import { supabase } from '@/lib/supabase-client'
+import { useSupabase } from '@/lib/SupabaseProvider'
 import { useToast } from '@/components/ui/use-toast'
 
 export function useWorkerAvailability(workerId: string) {
+  const { supabase } = useSupabase()
   const [weeklyAvailability, setWeeklyAvailability] = useState<AvailabilitySlot[]>([]);
-  const [exceptions, setExceptions] = useState<AvailabilityExceptionInput[]>([]);
+  const [exceptions, setExceptions] = useState<AvailabilityException[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
+  const [error, setError] = useState<any | null>(null);
   const { toast } = useToast();
 
   // Load data
   useEffect(() => {
-    if (!workerId) return;
+    if (!workerId || !supabase) return;
     loadAvailability();
-  }, [workerId]);
+  }, [workerId, supabase]);
 
   const loadAvailability = async () => {
+    if (!supabase) {
+      console.error('❌ Supabase client not available');
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
     try {
+      console.log('🔄 Loading availability for worker:', workerId);
+
       // Fetch weekly availability
       const { data: weeklyData, error: weeklyError } = await supabase
         .from('worker_weekly_availability')
         .select('*')
         .eq('worker_id', workerId);
+
+      console.log('📊 Weekly availability query result:', { weeklyData, weeklyError });
 
       if (weeklyError) throw weeklyError;
 
@@ -42,11 +52,13 @@ export function useWorkerAvailability(workerId: string) {
         .select('*')
         .eq('worker_id', workerId);
 
+      console.log('📊 Exceptions query result:', { exceptionData, exceptionError });
+
       if (exceptionError) throw exceptionError;
 
       // Transform data for UI
       setWeeklyAvailability(
-        weeklyData.map((item: WeeklyAvailability) => ({
+        (weeklyData || []).map((item: WeeklyAvailability) => ({
           id: item.id,
           day: item.day_of_week,
           start: item.start_time.substring(0, 5), // HH:MM
@@ -54,19 +66,23 @@ export function useWorkerAvailability(workerId: string) {
         }))
       );
 
-      setExceptions(
-        exceptionData.map((item: AvailabilityException) => ({
-          id: item.id,
-          date: item.date,
-          isAvailable: item.is_available,
-          allDay: !item.start_time || !item.end_time,
-          startTime: item.start_time ? item.start_time.substring(0, 5) : undefined,
-          endTime: item.end_time ? item.end_time.substring(0, 5) : undefined,
-          reason: item.reason || undefined,
-        }))
-      );
+      // Transform exceptions to match the expected format if necessary
+      const loadedExceptions = (exceptionData || []).map((ex: any) => ({
+        id: ex.id,
+        worker_id: ex.worker_id,
+        date: ex.date,
+        is_available: ex.is_available,
+        start_time: ex.start_time,
+        end_time: ex.end_time,
+        reason: ex.reason,
+        created_at: ex.created_at,
+        updated_at: ex.updated_at,
+      }));
+      setExceptions(loadedExceptions);
+
+      console.log('✅ Availability loaded successfully');
     } catch (err) {
-      console.error('Error loading availability:', err);
+      console.error('❌ Error loading availability:', err);
       setError(err instanceof Error ? err : new Error('Failed to load availability'));
       toast({
         title: 'Error',
@@ -80,49 +96,135 @@ export function useWorkerAvailability(workerId: string) {
 
   // Save weekly availability
   const saveWeeklyAvailability = async (slots: AvailabilitySlot[]) => {
+    if (!supabase) {
+      console.error('❌ Supabase client not available');
+      toast({
+        title: 'Error',
+        description: 'Database connection not available',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!workerId) {
+      toast({
+        title: 'Error',
+        description: 'Worker ID is required',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsLoading(true);
+    setError(null);
     
     try {
+      console.log('📊 Starting save operation...');
+      console.log('Worker ID:', workerId);
+      console.log('Slots to save:', slots);
+
+      // Check current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      console.log('🔐 Current user:', user?.email, 'Error:', userError);
+
+      if (userError || !user) {
+        throw new Error('Authentication required. Please sign in to save availability.');
+      }
+
+      // Validate slots
+      for (const slot of slots) {
+        if (!slot.start || !slot.end || slot.start >= slot.end) {
+          throw new Error(`Invalid time range for ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][slot.day]}: ${slot.start} to ${slot.end}`);
+        }
+      }
+
+      console.log('✅ Slot validation passed');
+
       // First delete all existing slots
+      console.log('🗑️ Deleting existing slots...');
       const { error: deleteError } = await supabase
         .from('worker_weekly_availability')
         .delete()
         .eq('worker_id', workerId);
       
-      if (deleteError) throw deleteError;
-      
-      // Insert new slots
-      if (slots.length > 0) {
-        const { error: insertError } = await supabase
-          .from('worker_weekly_availability')
-          .insert(
-            slots.map(slot => ({
-              worker_id: workerId,
-              day_of_week: slot.day,
-              start_time: slot.start,
-              end_time: slot.end,
-            }))
-          );
-          
-        if (insertError) throw insertError;
+      if (deleteError) {
+        console.error('❌ Delete operation failed:', deleteError);
+        throw deleteError;
       }
       
-      // Update local state
-      setWeeklyAvailability(slots);
+      let savedSlots: AvailabilitySlot[] = [];
+      // Insert new slots and get the saved data back
+      if (slots.length > 0) {
+        console.log('📝 Inserting new slots...');
+        const newSlots = slots.map(slot => ({
+          worker_id: workerId,
+          day_of_week: slot.day,
+          start_time: slot.start,
+          end_time: slot.end,
+        }));
+        
+        const { data: insertData, error: insertError } = await supabase
+          .from('worker_weekly_availability')
+          .insert(newSlots)
+          .select();
+        
+        if (insertError) {
+          console.error('❌ Insert operation failed:', insertError);
+          throw insertError;
+        }
+        
+        // Transform the returned data to update the local state
+        savedSlots = (insertData || []).map((item: WeeklyAvailability) => ({
+            id: item.id,
+            day: item.day_of_week,
+            start: item.start_time.substring(0, 5),
+            end: item.end_time.substring(0, 5),
+        }));
+      }
+      
+      // Update local state directly instead of reloading
+      setWeeklyAvailability(savedSlots);
       
       toast({
-        title: 'Success',
-        description: 'Weekly availability saved successfully',
+        title: 'Success! 🎉',
+        description: `Weekly availability saved successfully. ${slots.length} time slots configured.`,
+        variant: 'success',
       });
+
     } catch (err) {
-      console.error('Error saving weekly availability:', err);
-      setError(err instanceof Error ? err : new Error('Failed to save availability'));
+      console.error('❌ Error saving weekly availability:', err);
+      console.error('Error type:', typeof err);
+      console.error('Error details:', JSON.stringify(err, null, 2));
+      console.error('Worker ID:', workerId);
+      console.error('Slots being saved:', slots);
+      
+      let errorMessage = 'Failed to save weekly availability';
+      
+      // Handle Supabase-specific errors
+      if (err && typeof err === 'object') {
+        if ('message' in err) {
+          errorMessage = err.message as string;
+        } else if ('error' in err) {
+          errorMessage = (err as any).error;
+        } else if ('code' in err) {
+          errorMessage = `Database error (${(err as any).code}): ${(err as any).message || 'Unknown error'}`;
+        } else {
+          errorMessage = `Database operation failed: ${JSON.stringify(err)}`;
+        }
+      } else if (err instanceof Error) {
+        errorMessage = err.message;
+      }
+      
+      const error = new Error(errorMessage);
+      setError(error);
+      
       toast({
-        title: 'Error',
-        description: 'Failed to save weekly availability',
+        title: 'Failed to Save ❌',
+        description: errorMessage,
         variant: 'destructive',
       });
-      throw err;
+      
+      throw error;
     } finally {
       setIsLoading(false);
     }
@@ -130,7 +232,55 @@ export function useWorkerAvailability(workerId: string) {
 
   // Save an exception
   const saveException = async (exception: AvailabilityExceptionInput) => {
+    if (!supabase) {
+      console.error('❌ Supabase client not available');
+      toast({
+        title: 'Error',
+        description: 'Database connection not available',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!workerId) {
+      toast({
+        title: 'Error',
+        description: 'Worker ID is required',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Validate the exception data
+    if (!exception.date) {
+      toast({
+        title: 'Error',
+        description: 'Date is required for the exception',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!exception.allDay && (!exception.startTime || !exception.endTime)) {
+      toast({
+        title: 'Error',
+        description: 'Start and end times are required for timed exceptions',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!exception.allDay && exception.startTime && exception.endTime && exception.startTime >= exception.endTime) {
+      toast({
+        title: 'Error',
+        description: 'End time must be after start time',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsLoading(true);
+    setError(null);
     
     try {
       const exceptionData = {
@@ -142,63 +292,59 @@ export function useWorkerAvailability(workerId: string) {
         reason: exception.reason,
       };
       
-      let result;
-      
-      if (exception.id) {
-        // Update existing exception
-        const { data, error } = await supabase
+      const { data: savedException, error } = await (exception.id
+        ? supabase
           .from('worker_availability_exceptions')
           .update(exceptionData)
           .eq('id', exception.id)
           .select()
-          .single();
-          
-        if (error) throw error;
-        result = data;
-      } else {
-        // Insert new exception
-        const { data, error } = await supabase
+          .single()
+        : supabase
           .from('worker_availability_exceptions')
           .insert(exceptionData)
           .select()
-          .single();
+          .single());
           
-        if (error) throw error;
-        result = data;
+      if (error) throw error;
+      
+      // Update local state directly
+      const newOrUpdatedException: AvailabilityException = {
+        id: savedException.id,
+        date: savedException.date,
+        is_available: savedException.is_available,
+        start_time: savedException.start_time,
+        end_time: savedException.end_time,
+        reason: savedException.reason,
+        worker_id: savedException.worker_id,
+        created_at: savedException.created_at,
+        updated_at: savedException.updated_at,
+      };
+
+      if (exception.id) {
+        setExceptions(prev => prev.map(e => e.id === exception.id ? newOrUpdatedException : e));
+      } else {
+        setExceptions(prev => [...prev, newOrUpdatedException]);
       }
       
-      // Update local state
-      setExceptions(prev => {
-        const updated = [...prev];
-        const index = updated.findIndex(e => e.id === exception.id);
-        
-        if (index >= 0) {
-          updated[index] = {
-            ...exception,
-            id: result.id,
-          };
-        } else {
-          updated.push({
-            ...exception,
-            id: result.id,
-          });
-        }
-        
-        return updated;
-      });
+      const formattedDate = new Date(savedException.date).toLocaleDateString();
+      const actionType = exception.id ? 'updated' : 'created';
+      const exceptionType = savedException.is_available ? 'special availability' : 'time off';
       
       toast({
-        title: 'Success',
-        description: 'Exception saved successfully',
+        title: `Success! 🎉`,
+        description: `${exceptionType.charAt(0).toUpperCase() + exceptionType.slice(1)} ${actionType} for ${formattedDate}`,
+        variant: 'success',
       });
-      
-      return result;
+
+      // No longer reloading all data from the server
+      return savedException;
     } catch (err) {
       console.error('Error saving exception:', err);
-      setError(err instanceof Error ? err : new Error('Failed to save exception'));
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save exception';
+      setError(err instanceof Error ? err : new Error(errorMessage));
       toast({
-        title: 'Error',
-        description: 'Failed to save exception',
+        title: 'Failed to Save ❌',
+        description: errorMessage,
         variant: 'destructive',
       });
       throw err;
@@ -209,9 +355,32 @@ export function useWorkerAvailability(workerId: string) {
 
   // Delete an exception
   const deleteException = async (exceptionId: string) => {
+    if (!supabase) {
+      console.error('❌ Supabase client not available');
+      toast({
+        title: 'Error',
+        description: 'Database connection not available',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!exceptionId) {
+      toast({
+        title: 'Error',
+        description: 'Exception ID is required',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsLoading(true);
+    setError(null);
     
     try {
+      // Find the exception being deleted for better user feedback
+      const exceptionToDelete = exceptions.find(e => e.id === exceptionId);
+      
       const { error } = await supabase
         .from('worker_availability_exceptions')
         .delete()
@@ -219,19 +388,24 @@ export function useWorkerAvailability(workerId: string) {
         
       if (error) throw error;
       
-      // Update local state
+      // Update local state directly
       setExceptions(prev => prev.filter(e => e.id !== exceptionId));
       
+      const formattedDate = exceptionToDelete ? new Date(exceptionToDelete.date).toLocaleDateString() : 'selected date';
+      
       toast({
-        title: 'Success',
-        description: 'Exception deleted successfully',
+        title: 'Deleted! 🗑️',
+        description: `Exception for ${formattedDate} has been removed from your schedule`,
+        variant: 'success',
       });
+
     } catch (err) {
       console.error('Error deleting exception:', err);
-      setError(err instanceof Error ? err : new Error('Failed to delete exception'));
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete exception';
+      setError(err instanceof Error ? err : new Error(errorMessage));
       toast({
-        title: 'Error',
-        description: 'Failed to delete exception',
+        title: 'Failed to Delete ❌',
+        description: errorMessage,
         variant: 'destructive',
       });
       throw err;

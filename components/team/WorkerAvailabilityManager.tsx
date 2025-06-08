@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useWorkerAvailability } from '@/hooks/use-worker-availability'
 import WeeklyAvailabilityEditor from './WeeklyAvailabilityEditor'
-import AvailabilityExceptions from './AvailabilityExceptions'
+import { AvailabilityExceptions } from './AvailabilityExceptions'
 import { useWorkers } from '@/hooks/use-workers'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
@@ -22,6 +22,7 @@ export default function WorkerAvailabilityManager({
 }: WorkerAvailabilityManagerProps) {
   const { workers = [], loading: workersLoading } = useWorkers()
   const [selectedWorkerId, setSelectedWorkerId] = useState<string>(initialWorkerId || '')
+  const [activeTab, setActiveTab] = useState('weekly')
   const { toast } = useToast()
   
   // Set initial worker if none provided and workers are loaded
@@ -34,7 +35,7 @@ export default function WorkerAvailabilityManager({
         variant: 'info'
       })
     }
-  }, [workers, initialWorkerId, selectedWorkerId])
+  }, [workers, initialWorkerId, selectedWorkerId, toast])
   
   const {
     weeklyAvailability,
@@ -89,16 +90,17 @@ export default function WorkerAvailabilityManager({
     )
   }
   
-  // No workers available
-  if (isAdmin && workers.length === 0) {
+  // If there are no workers, show an informative message.
+  if (!workersLoading && workers.length === 0) {
     return (
-      <div className="space-y-6">
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-muted-foreground">No workers available. Please add workers first.</p>
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardContent className="p-8 text-center">
+          <h3 className="text-lg font-semibold">No Workers Found</h3>
+          <p className="text-sm text-muted-foreground">
+            You need to add a worker to the team before you can manage availability.
+          </p>
+        </CardContent>
+      </Card>
     )
   }
   
@@ -133,7 +135,7 @@ export default function WorkerAvailabilityManager({
     <div className="space-y-6">
       {renderWorkerSelector()}
       
-      <Tabs defaultValue="weekly">
+      <Tabs defaultValue="weekly" value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="weekly">Weekly Schedule</TabsTrigger>
           <TabsTrigger value="exceptions">Time Off & Exceptions</TabsTrigger>

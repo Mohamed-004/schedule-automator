@@ -1,14 +1,15 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Calendar, Users, Briefcase, Bell, ListTodo, Menu, X } from 'lucide-react'
+import { Calendar, Users, Briefcase, Bell, ListTodo, Menu, X, ClipboardList } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 
 const navLinks = [
   { href: '/dashboard', label: "Today's Schedule", icon: ListTodo },
   { href: '/dashboard/calendar', label: 'Calendar View', icon: Calendar },
-  { href: '/dashboard/team', label: 'Workers', icon: Users },
+  { href: '/dashboard/team', label: 'Team', icon: Users },
   { href: '/dashboard/jobs', label: 'Jobs', icon: Briefcase },
+  { href: '/dashboard/assign-jobs', label: 'Assign Jobs', icon: Briefcase },
   { href: '/dashboard/notifications', label: 'Notifications', icon: Bell },
 ]
 

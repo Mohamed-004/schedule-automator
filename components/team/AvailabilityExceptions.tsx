@@ -1,308 +1,197 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { format } from 'date-fns'
 import { Calendar } from '@/components/ui/calendar'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Switch } from '@/components/ui/switch'
-import { AvailabilityExceptionInput } from '@/lib/types'
+import { AvailabilityException, AvailabilityExceptionInput } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/use-toast'
-import { CalendarX, Clock } from 'lucide-react'
+import { CalendarX, Clock, PlusCircle, Trash2, Edit } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import '@/components/ui/calendar.css'
+import { AvailabilityExceptionForm } from './AvailabilityExceptionForm'
 
-interface AvailabilityExceptionsProps {
-  exceptions: AvailabilityExceptionInput[]
-  onSave: (exception: AvailabilityExceptionInput) => Promise<any>
-  onDelete: (id: string) => Promise<void>
-  isLoading?: boolean
+// Client-only component to prevent hydration mismatch on date formatting
+const FormattedDate = ({ date }: { date: string }) => {
+  const [isClient, setIsClient] = useState(false)
+  useEffect(() => {
+    setIsClient(true)
+  }, [])
+
+  return isClient ? new Date(date).toLocaleDateString('en-US', { 
+    weekday: 'long', 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric', 
+    timeZone: 'UTC' 
+  }) : null
 }
 
-export default function AvailabilityExceptions({
-  exceptions = [],
-  onSave,
-  onDelete,
-  isLoading = false,
-}: AvailabilityExceptionsProps) {
-  const [showDialog, setShowDialog] = useState(false)
-  const [date, setDate] = useState<Date | undefined>(new Date())
-  const [isAvailable, setIsAvailable] = useState(false)
-  const [allDay, setAllDay] = useState(true)
-  const [startTime, setStartTime] = useState('09:00')
-  const [endTime, setEndTime] = useState('17:00')
-  const [reason, setReason] = useState('')
-  const [editingId, setEditingId] = useState<string | undefined>(undefined)
-  const { toast } = useToast()
-  
-  const resetForm = () => {
-    setDate(new Date())
-    setIsAvailable(false)
-    setAllDay(true)
-    setStartTime('09:00')
-    setEndTime('17:00')
-    setReason('')
-    setEditingId(undefined)
+const formatTime = (timeStr: string | null | undefined): string => {
+  if (!timeStr) return '';
+  const [hours, minutes] = timeStr.split(':');
+  const date = new Date();
+  date.setHours(parseInt(hours, 10));
+  date.setMinutes(parseInt(minutes, 10));
+  return date.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  }).replace(/^0/, ''); // Remove leading zero from hour
+};
+
+interface AvailabilityExceptionsProps {
+  exceptions: AvailabilityException[]
+  onSave: (exception: AvailabilityExceptionInput) => Promise<any>
+  onDelete: (exceptionId: string) => Promise<void>
+  isLoading: boolean
+}
+
+export function AvailabilityExceptions({ exceptions, onSave, onDelete, isLoading }: AvailabilityExceptionsProps) {
+  const [isFormOpen, setIsFormOpen] = useState(false)
+  const [formInitialData, setFormInitialData] = useState<AvailabilityExceptionInput | null>(null)
+  const [exceptionToDelete, setExceptionToDelete] = useState<AvailabilityException | null>(null)
+
+  const handleSave = async (exceptionData: AvailabilityExceptionInput) => {
+    await onSave(exceptionData)
+    setIsFormOpen(false)
+    setFormInitialData(null)
   }
-  
-  const handleEdit = (exception: AvailabilityExceptionInput) => {
-    setDate(new Date(exception.date))
-    setIsAvailable(exception.isAvailable)
-    setAllDay(exception.allDay)
-    setStartTime(exception.startTime || '09:00')
-    setEndTime(exception.endTime || '17:00')
-    setReason(exception.reason || '')
-    setEditingId(exception.id)
-    setShowDialog(true)
+
+  const handleEdit = (exception: AvailabilityException) => {
+    const formData: AvailabilityExceptionInput = {
+      id: exception.id,
+      date: exception.date,
+      isAvailable: exception.is_available,
+      allDay: exception.start_time === null,
+      startTime: exception.start_time || undefined,
+      endTime: exception.end_time || undefined,
+      reason: exception.reason || undefined,
+    }
+    setFormInitialData(formData)
+    setIsFormOpen(true)
   }
-  
-  const handleDelete = async (id: string) => {
-    try {
-      await onDelete(id)
-      toast({
-        title: 'Exception Removed',
-        description: 'The time off/exception has been removed from your schedule',
-        variant: 'success'
-      })
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to delete the exception',
-        variant: 'destructive'
-      })
+
+  const handleDeleteRequest = (exception: AvailabilityException) => {
+    setExceptionToDelete(exception)
+  }
+
+  const confirmDelete = async () => {
+    if (exceptionToDelete) {
+      await onDelete(exceptionToDelete.id)
+      setExceptionToDelete(null)
     }
   }
-  
-  const handleSave = async () => {
-    if (!date) {
-      toast({
-        title: 'Missing Date',
-        description: 'Please select a date for this exception',
-        variant: 'destructive'
-      })
-      return
-    }
-    
-    if (!allDay && startTime >= endTime) {
-      toast({
-        title: 'Invalid Time Range',
-        description: 'End time must be after start time',
-        variant: 'destructive'
-      })
-      return
-    }
-    
-    try {
-      const exceptionData: AvailabilityExceptionInput = {
-        id: editingId,
-        date: format(date, 'yyyy-MM-dd'),
-        isAvailable,
-        allDay,
-        startTime: allDay ? undefined : startTime,
-        endTime: allDay ? undefined : endTime,
-        reason: reason.trim() || undefined
-      }
-      
-      await onSave(exceptionData)
-      
-      toast({
-        title: 'Exception Saved',
-        description: `${isAvailable ? 'Special availability' : 'Time off'} for ${format(date, 'MMM dd, yyyy')} saved`,
-        variant: 'success'
-      })
-      
-      setShowDialog(false)
-      resetForm()
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to save the exception',
-        variant: 'destructive'
-      })
-    }
+
+  const cancelDelete = () => {
+    setExceptionToDelete(null)
   }
-  
-  const formatExceptionDate = (dateStr: string) => {
-    const date = new Date(dateStr)
-    return format(date, 'MMM dd, yyyy')
+
+  const handleAddNew = () => {
+    setFormInitialData(null)
+    setIsFormOpen(true)
   }
-  
+
+  const handleCancel = () => {
+    setIsFormOpen(false)
+    setFormInitialData(null)
+  }
+
+  const sortedExceptions = [...exceptions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+  const exceptionDates = exceptions.map(e => new Date(e.date));
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-xl flex justify-between items-center">
-          <span>Time Off & Exceptions</span>
-          <Dialog open={showDialog} onOpenChange={setShowDialog} modal={false}>
-            <DialogTrigger asChild>
-              <Button onClick={resetForm}>Add Exception</Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[500px]">
-              <DialogHeader>
-                <DialogTitle>
-                  {editingId ? 'Edit Exception' : 'Add New Exception'}
-                </DialogTitle>
-              </DialogHeader>
-              
-              <div className="space-y-4 py-4">
-                <div className="flex flex-col space-y-3">
-                  <Label htmlFor="exception-type" className="font-medium">Exception Type</Label>
-                  <RadioGroup 
-                    value={isAvailable ? 'available' : 'unavailable'} 
-                    onValueChange={(value) => setIsAvailable(value === 'available')}
-                    className="flex gap-4"
-                  >
-                    <div className="flex items-center space-x-2 border rounded-md p-3 hover:bg-slate-50 cursor-pointer flex-1">
-                      <RadioGroupItem value="unavailable" id="unavailable" className="border-slate-400" />
-                      <Label htmlFor="unavailable" className="font-normal cursor-pointer">Time Off (Unavailable)</Label>
+    <>
+      <Card>
+        <CardHeader>
+          <div className="flex justify-between items-center">
+            <CardTitle>Time Off & Special Hours</CardTitle>
+            {!isFormOpen && (
+              <Button onClick={handleAddNew} size="sm">
+                <PlusCircle className="mr-2 h-4 w-4" /> Add New
+              </Button>
+            )}
+          </div>
+          <CardDescription>
+            Add specific dates for time off or different working hours that override the weekly schedule.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isFormOpen && (
+            <div className="p-4 border rounded-lg bg-gray-50/50 mb-6 transition-all duration-300 ease-in-out">
+              <h3 className="text-lg font-semibold mb-4 text-gray-800">
+                {formInitialData ? 'Edit Exception' : 'Add New Exception'}
+              </h3>
+              <AvailabilityExceptionForm
+                initialData={formInitialData}
+                onSave={handleSave}
+                onCancel={handleCancel}
+                isLoading={isLoading}
+                existingExceptionDates={exceptionDates}
+              />
+            </div>
+          )}
+          <div className="space-y-4">
+            {sortedExceptions.length > 0 ? (
+              sortedExceptions.map(exception => {
+                const allDay = !exception.start_time;
+                return (
+                  <div key={exception.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors">
+                    <div>
+                      <p className="font-semibold">
+                        <FormattedDate date={exception.date} />
+                      </p>
+                      <p className={`text-sm font-medium ${exception.is_available ? 'text-green-600' : 'text-red-600'}`}>
+                        {exception.is_available
+                          ? (allDay ? 'Available: All Day' : `Available: ${formatTime(exception.start_time)} - ${formatTime(exception.end_time)}`)
+                          : (allDay ? 'Unavailable: All Day' : `Unavailable: ${formatTime(exception.start_time)} - ${formatTime(exception.end_time)}`)
+                        }
+                      </p>
+                      {exception.reason && <p className="text-sm text-muted-foreground mt-1">Reason: {exception.reason}</p>}
                     </div>
-                    <div className="flex items-center space-x-2 border rounded-md p-3 hover:bg-slate-50 cursor-pointer flex-1">
-                      <RadioGroupItem value="available" id="available" className="border-slate-400" />
-                      <Label htmlFor="available" className="font-normal cursor-pointer">Special Availability</Label>
-                    </div>
-                  </RadioGroup>
-                </div>
-                
-                <div className="space-y-2">
-                  <Label className="font-medium">Date</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={`w-full justify-start text-left font-normal ${date ? "" : "text-muted-foreground"}`}
-                      >
-                        {date ? format(date, 'PPP') : <span>Pick a date</span>}
-                        <CalendarX className="ml-auto h-4 w-4 opacity-50" />
+                    <div className="flex items-center gap-2">
+                      <Button variant="ghost" size="icon" onClick={() => handleEdit(exception)} disabled={isLoading}>
+                        <Edit className="h-4 w-4" />
                       </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={date}
-                        onSelect={setDate}
-                        initialFocus
-                        className="border rounded-md"
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                
-                <div className="flex items-center space-x-2 p-2 border rounded-md">
-                  <Switch 
-                    checked={allDay} 
-                    onCheckedChange={setAllDay}
-                    id="all-day"
-                  />
-                  <Label htmlFor="all-day" className="font-normal cursor-pointer">All Day</Label>
-                </div>
-                
-                {!allDay && (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="start-time" className="font-medium">Start Time</Label>
-                      <Input
-                        id="start-time"
-                        type="time"
-                        value={startTime}
-                        onChange={(e) => setStartTime(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="end-time" className="font-medium">End Time</Label>
-                      <Input
-                        id="end-time"
-                        type="time"
-                        value={endTime}
-                        onChange={(e) => setEndTime(e.target.value)}
-                      />
+                      <Button variant="ghost" size="icon" onClick={() => handleDeleteRequest(exception)} disabled={isLoading}>
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
                     </div>
                   </div>
-                )}
-                
-                <div className="space-y-2">
-                  <Label htmlFor="reason" className="font-medium">Reason (Optional)</Label>
-                  <Textarea
-                    id="reason"
-                    placeholder="Vacation, appointment, etc."
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                  />
-                </div>
-              </div>
-              
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setShowDialog(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleSave} disabled={isLoading}>
-                  {isLoading ? 'Saving...' : 'Save Exception'}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        {exceptions.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground flex flex-col items-center">
-            <CalendarX className="h-12 w-12 mb-3 opacity-30" />
-            <p>No exceptions or time off scheduled.</p>
-            <p className="text-sm mt-1">Click "Add Exception" to set special availability or time off.</p>
+                )
+              })
+            ) : (
+              !isFormOpen && <p className="text-muted-foreground text-center py-4">No exceptions scheduled.</p>
+            )}
           </div>
-        ) : (
-          <div className="divide-y">
-            {exceptions.map((exception) => (
-              <div key={exception.id} className="py-3 first:pt-0 flex justify-between items-start">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={exception.isAvailable ? 'outline' : 'destructive'}>
-                      {exception.isAvailable ? 'Special Hours' : 'Time Off'}
-                    </Badge>
-                    <span className="font-medium">{formatExceptionDate(exception.date)}</span>
-                  </div>
-                  
-                  <div className="mt-1">
-                    {exception.allDay ? (
-                      <span className="text-sm text-muted-foreground">All day</span>
-                    ) : (
-                      <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                        <Clock className="h-3 w-3" />
-                        <span>{exception.startTime} - {exception.endTime}</span>
-                      </div>
-                    )}
-                  </div>
-                  
-                  {exception.reason && (
-                    <p className="text-sm mt-1 text-muted-foreground">{exception.reason}</p>
-                  )}
-                </div>
-                
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleEdit(exception)}
-                  >
-                    Edit
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleDelete(exception.id!)}
-                    disabled={isLoading}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+      
+      <Dialog open={!!exceptionToDelete} onOpenChange={(isOpen) => !isOpen && cancelDelete()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Are you absolutely sure?</DialogTitle>
+            <DialogDescription>
+              This action cannot be undone. This will permanently delete the exception for{' '}
+              <span className="font-semibold"><FormattedDate date={exceptionToDelete?.date || ''} /></span>.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button variant="outline" onClick={cancelDelete}>Cancel</Button>
+            <Button variant="destructive" onClick={confirmDelete} disabled={isLoading}>
+              {isLoading ? 'Deleting...' : 'Delete Exception'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 } 
