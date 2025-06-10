@@ -23,8 +23,8 @@ import { Calendar } from "@/components/ui/calendar";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { createJob, getAvailableWorkersAction, createClient, getWorkerScheduleAction, getRecommendedWorkersAction } from "../actions";
-import { useEffect, useState, useTransition } from "react";
+import { createJob, getAvailableWorkersAction, createNewClient, getWorkerScheduleAction, getRecommendedWorkersAction } from "../actions";
+import { useEffect, useState, useTransition, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -37,6 +37,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { addMinutes } from "date-fns";
 import { Badge } from "@/components/ui/badge";
+import { Fragment } from "react";
+import "../worker-card.css";
 
 const assignmentFormSchema = z.object({
     title: z.string().min(2, "Title must be at least 2 characters."),
@@ -342,7 +344,7 @@ function WorkerScheduleDisplay({ worker, schedule, isLoading, isSelected, schedu
                                     <span>Weekly Hours</span>
                                 </div>
                                 <span className="font-semibold text-gray-800">
-                                    {(schedule.weekly_hours_worked ?? 0).toFixed(0)}h / {(schedule.weekly_hours_goal ?? 0).toFixed(0)}h
+                                    {(schedule.weekly_hours_worked ?? 0).toFixed(1)}h / {(schedule.weekly_hours_goal ?? 0).toFixed(1)}h
                                 </span>
                             </div>
                             <div className="h-1.5 w-full rounded-full bg-gray-200">
@@ -364,7 +366,7 @@ function WorkerScheduleDisplay({ worker, schedule, isLoading, isSelected, schedu
                                     <span>Today's Load</span>
                                 </div>
                                 <span className="font-semibold text-gray-800">
-                                    {(schedule.daily_hours_worked ?? 0).toFixed(0)}h / {(schedule.daily_hours_goal ?? 0).toFixed(0)}h
+                                    {(schedule.daily_hours_worked ?? 0).toFixed(1)}h / {(schedule.daily_hours_goal ?? 0).toFixed(1)}h
                                 </span>
                             </div>
                             <div className="h-1.5 w-full rounded-full bg-gray-200">
@@ -485,33 +487,86 @@ function hasTimeConflict(startTimeStr: string, endTimeStr: string, bookedSlots: 
     });
 }
 
-function RecommendationBadges({ worker }: { worker: Worker }) {
-    if (!worker.recommendationScore) return null;
+interface Highlight {
+    icon: React.ElementType;
+    text: string;
+    tooltip: string;
+}
+
+function RecommendationHighlights({ worker, isTopRecommended }: { worker: Worker; isTopRecommended: boolean }) {
+    const highlights: Highlight[] = [];
+
+    if (worker.clientPreferred) {
+        highlights.push({
+            icon: History,
+            text: 'Past Client History',
+            tooltip: 'This worker has previously worked for this client.'
+        });
+    }
+
+    if (worker.skillMatch) {
+        highlights.push({
+            icon: BadgeCheck,
+            text: 'Skill Match',
+            tooltip: 'The worker possesses the skills required for this job type.'
+        });
+    }
+
+    if (worker.balancedWorkload) {
+        highlights.push({
+            icon: Scale,
+            text: 'Good Capacity',
+            tooltip: 'This worker has a balanced schedule and can take on more work.'
+        });
+    }
+    
+    if (worker.hasRatings && worker.avgRating && worker.avgRating >= 4.5) {
+        highlights.push({
+            icon: Star,
+            text: 'Top Rated',
+            tooltip: `This worker has an average rating of ${worker.avgRating.toFixed(1)} stars.`
+        });
+    }
+
+    if (highlights.length === 0) {
+        return null;
+    }
 
     return (
-        <div className="flex flex-wrap gap-1.5 mt-2">
-            {worker.skillMatch && (
-                <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800">
-                    <BadgeCheck className="h-3 w-3 mr-1" /> Skill Match
-                </div>
+        <div className="mt-4 pt-4 border-t border-gray-200/80">
+            {isTopRecommended && (
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Why Recommended?</h4>
             )}
-            {worker.clientPreferred && (
-                <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/20 dark:text-purple-300 dark:border-purple-800">
-                    <History className="h-3 w-3 mr-1" /> Client Favorite
-                </div>
-            )}
-            {worker.balancedWorkload && (
-                <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-300 dark:border-green-800">
-                    <Scale className="h-3 w-3 mr-1" /> Available Capacity
-                </div>
-            )}
-            {worker.hasRatings && worker.avgRating && worker.avgRating >= 4.5 && (
-                <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800">
-                    <Star className="h-3 w-3 mr-1" /> Top Rated
-                </div>
-            )}
+            <div className="flex flex-wrap gap-2">
+                {highlights.map((highlight) => (
+                    <TooltipProvider key={highlight.text}>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <div className="flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50/80 px-2.5 py-1">
+                                    <highlight.icon className="h-4 w-4 text-green-600" />
+                                    <span className="text-xs font-semibold text-gray-800">{highlight.text}</span>
+                                </div>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>{highlight.tooltip}</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                ))}
+            </div>
         </div>
     );
+}
+
+function getMatchScoreColor(score: number | null | undefined): string {
+    if (score == null) return "bg-gray-100 text-gray-700 border-gray-200";
+    if (score >= 80) return "bg-green-100 text-green-800 border-green-200";
+    if (score >= 50) return "bg-amber-100 text-amber-800 border-amber-200";
+    return "bg-red-100 text-red-800 border-red-200";
+}
+
+function toTitleCase(str: string) {
+    return str.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
 }
 
 export function AssignmentForm({ clients: initialClients, workers: initialWorkers = [], jobTypes: initialJobTypes = [] }: AssignmentFormProps) {
@@ -532,7 +587,7 @@ export function AssignmentForm({ clients: initialClients, workers: initialWorker
     const [workerSchedules, setWorkerSchedules] = useState<Record<string, WorkerSchedule | null>>({});
     const [schedulesLoading, setSchedulesLoading] = useState<Record<string, boolean>>({});
     const [jobTypes, setJobTypes] = useState<JobType[]>(initialJobTypes);
-
+    
     const form = useForm<AssignmentFormValues>({
         resolver: zodResolver(assignmentFormSchema),
         defaultValues: {
@@ -559,6 +614,8 @@ export function AssignmentForm({ clients: initialClients, workers: initialWorker
     const assignedWorkerId = form.watch("assignedWorkerId");
     const jobTypeId = form.watch("jobTypeId");
 
+    const reviewSectionRef = useRef<HTMLDivElement>(null);
+
     useEffect(() => {
         if (availableWorkers.length > 0 && scheduledDate) {
             const dateString = scheduledDate.toISOString().split('T')[0];
@@ -567,6 +624,8 @@ export function AssignmentForm({ clients: initialClients, workers: initialWorker
                 setSchedulesLoading(prev => ({ ...prev, [worker.id]: true }));
                 getWorkerScheduleAction(worker.id, dateString).then(result => {
                     if (result.success) {
+                        // Add console log to debug the worker schedule data
+                        console.log(`Worker schedule for ${worker.name}:`, result.schedule);
                         setWorkerSchedules(prev => ({ ...prev, [worker.id]: result.schedule || null }));
                     } else {
                         toast.error(`Failed to fetch schedule for ${worker.name}.`, { description: result.error });
@@ -606,8 +665,8 @@ export function AssignmentForm({ clients: initialClients, workers: initialWorker
 
                     startFetchingWorkers(async () => {
                         setAvailableWorkers([]);
-                         if (form.getValues('assignedWorkerId')) {
-                           form.setValue('assignedWorkerId', '', { shouldValidate: true });
+                        if (form.getValues('assignedWorkerId')) {
+                            form.setValue('assignedWorkerId', '', { shouldValidate: true });
                         }
                         
                         const clientId = form.getValues('clientId');
@@ -621,29 +680,41 @@ export function AssignmentForm({ clients: initialClients, workers: initialWorker
                                 jobType || undefined
                             );
                             
-                        if (result.success) {
-                            const fetchedWorkers = result.workers || [];
-                            const mappedWorkers: Worker[] = fetchedWorkers.map((w: any) => ({
-                                id: w.worker_id,
-                                name: w.worker_name,
-                                email: w.worker_email,
-                                phone: w.worker_phone,
-                                role: w.worker_role,
-                                    avatarUrl: null,
-                                    recommendationScore: w.recommendation_score,
-                                    skillMatch: w.skill_match,
-                                    clientPreferred: w.client_preferred,
-                                    balancedWorkload: w.balanced_workload,
-                                    hasRatings: w.has_ratings,
-                                    avgRating: w.avg_rating,
-                                    availabilityScore: w.availability_score,
-                                    isAvailable: true,
-                            }));
-                            setAvailableWorkers(mappedWorkers);
-                            setWorkerSchedules({}); // Clear old schedules
-                        } else {
+                            if (result.success) {
+                                const fetchedWorkers = result.workers || [];
+                                
+                                const mappedWorkers: Worker[] = fetchedWorkers.map((w: any) => {
+                                    // Always clean the worker name to remove any trailing numbers
+                                    const cleanName = typeof w.worker_name === 'string' 
+                                        ? w.worker_name.replace(/\s+\d+$/, '') 
+                                        : w.worker_name || "Unknown Worker";
+                                    
+                                    return {
+                                        id: w.worker_id,
+                                        name: cleanName, // Use cleaned name
+                                        email: w.worker_email,
+                                        phone: w.worker_phone,
+                                        role: w.worker_role,
+                                        avatarUrl: null,
+                                        recommendationScore: w.recommendation_score,
+                                        skillMatch: w.skill_match,
+                                        clientPreferred: w.client_preferred,
+                                        balancedWorkload: w.balanced_workload,
+                                        hasRatings: w.has_ratings,
+                                        avgRating: w.avg_rating,
+                                        availabilityScore: w.availability_score,
+                                        isAvailable: true,
+                                    };
+                                });
+                                
+                                // Sort workers by recommendation score DESCENDING before setting state
+                                const sortedWorkers = mappedWorkers.sort((a, b) => (b.recommendationScore || 0) - (a.recommendationScore || 0));
+
+                                setAvailableWorkers(sortedWorkers);
+                                setWorkerSchedules({}); // Clear old schedules
+                            } else {
                                 toast.error("Failed to get recommended workers.", { description: result.error });
-                            setAvailableWorkers([]);
+                                setAvailableWorkers([]);
                             }
                         }
                     });
@@ -659,6 +730,36 @@ export function AssignmentForm({ clients: initialClients, workers: initialWorker
         };
         calculateAndFetch();
     }, [scheduledDate, startTimeStr, endTimeStr, form.watch('clientId'), form.watch('jobTypeId')]);
+
+    const clientIdField = form.watch('clientId');
+    const selectedClient = clients.find(c => c.id === clientIdField);
+    const selectedWorker = availableWorkers.find(w => w.id === assignedWorkerId);
+
+    useEffect(() => {
+        // Only scroll if a worker is selected, client is selected, and the worker is selectable
+        const schedule = selectedWorker ? workerSchedules[selectedWorker.id] : null;
+        
+        let isSelectable = false;
+        if (schedule) {
+            const effectiveAvailability = (schedule.exception_start_time && schedule.exception_end_time)
+                ? [{ start_time: schedule.exception_start_time, end_time: schedule.exception_end_time }]
+                : schedule.daily_availability_slots;
+                
+            const isWithinAvailability = isTimeWithinAvailability(startTimeStr, endTimeStr, effectiveAvailability);
+            const conflictsWithBooking = hasTimeConflict(startTimeStr, endTimeStr, schedule.daily_schedule);
+            isSelectable = isWithinAvailability && !conflictsWithBooking;
+        }
+        
+        if (selectedWorker && selectedClient && isSelectable && reviewSectionRef.current) {
+            // Small delay to ensure DOM has updated
+            setTimeout(() => {
+                reviewSectionRef.current?.scrollIntoView({ 
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+            }, 100);
+        }
+    }, [assignedWorkerId, clientIdField, workerSchedules, startTimeStr, endTimeStr]);
 
     async function handleNewClient(e: React.FormEvent) {
         e.preventDefault();
@@ -682,7 +783,7 @@ export function AssignmentForm({ clients: initialClients, workers: initialWorker
         formData.append('address', newClientAddress.trim());
 
         startCreatingClient(async () => {
-            const result = await createClient(formData);
+            const result = await createNewClient(formData);
             if (result.success && result.client) {
                 toast.success(`Client "${result.client.name}" created successfully.`);
                 const newClient = { ...result.client, id: result.client.id, name: result.client.name };
@@ -727,10 +828,6 @@ export function AssignmentForm({ clients: initialClients, workers: initialWorker
             }
         });
     }
-
-    const clientIdField = form.watch('clientId');
-    const selectedClient = clients.find(c => c.id === clientIdField);
-    const selectedWorker = availableWorkers.find(w => w.id === assignedWorkerId);
 
     return (
         <Dialog open={isClientDialogOpen} onOpenChange={setIsClientDialogOpen}>
@@ -998,190 +1095,201 @@ export function AssignmentForm({ clients: initialClients, workers: initialWorker
                                             ? "Finding recommended workers for this schedule..." 
                                             : availableWorkers.length > 0 
                                                 ? "Select a worker. Recommendations are sorted by best match." 
-                                                : "No workers are available. Try adjusting the schedule."}
+                                                : "Please select a client and schedule to see recommendations."}
                                     </CardDescription>
                                 </CardHeader>
+                                
                                 <CardContent className="relative space-y-6">
-                                     <FormField
-                                        control={form.control}
-                                        name="assignedWorkerId"
-                                        render={({ field }) => (
-                                            <FormItem>
-                                                <RadioGroup
-                                                    onValueChange={field.onChange}
-                                                    value={field.value}
-                                                    className="grid grid-cols-1 gap-4"
-                                                >
-                                                    {isFetchingWorkers ? (
-                                                        <div key="loader" className="flex items-center justify-center p-4">
-                                                            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                                                        </div>
-                                                    ) : availableWorkers.length > 0 ? (
-                                                        availableWorkers.map((worker) => {
-                                                            const schedule = workerSchedules[worker.id];
-                                                            
-                                                            let conflictReason: 'availability' | 'booking' | null = null;
-                                                            let isSelectable = false;
+                                     {!clientIdField || !scheduledDate ? (
+                                        <div className="text-center text-muted-foreground p-8 border-2 border-dashed rounded-lg bg-slate-50/50">
+                                            <p className="font-semibold">Complete Previous Steps</p>
+                                            <p className="mt-2 text-sm">Please select a client and set a schedule to see recommended workers.</p>
+                                        </div>
+                                     ) : (
+                                        <FormField
+                                            control={form.control}
+                                            name="assignedWorkerId"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <RadioGroup
+                                                        onValueChange={field.onChange}
+                                                        value={field.value}
+                                                        className="grid grid-cols-1 gap-4"
+                                                    >
+                                                        {isFetchingWorkers ? (
+                                                            <div key="loader" className="flex items-center justify-center p-4">
+                                                                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                                                            </div>
+                                                        ) : availableWorkers.length > 0 ? (
+                                                            availableWorkers.map((worker, index) => {
+                                                                const schedule = workerSchedules[worker.id];
+                                                                
+                                                                let conflictReason: 'availability' | 'booking' | null = null;
+                                                                let isSelectable = false;
 
-                                                            if (schedule) {
-                                                                const effectiveAvailability = (schedule.exception_start_time && schedule.exception_end_time)
-                                                                    ? [{ start_time: schedule.exception_start_time, end_time: schedule.exception_end_time }]
-                                                                    : schedule.daily_availability_slots;
+                                                                if (schedule) {
+                                                                    const effectiveAvailability = (schedule.exception_start_time && schedule.exception_end_time)
+                                                                        ? [{ start_time: schedule.exception_start_time, end_time: schedule.exception_end_time }]
+                                                                        : schedule.daily_availability_slots;
                                                                     
-                                                                const isWithinAvailability = isTimeWithinAvailability(startTimeStr, endTimeStr, effectiveAvailability);
-                                                                const conflictsWithBooking = hasTimeConflict(startTimeStr, endTimeStr, schedule.daily_schedule);
+                                                                    const isWithinAvailability = isTimeWithinAvailability(startTimeStr, endTimeStr, effectiveAvailability);
+                                                                    const conflictsWithBooking = hasTimeConflict(startTimeStr, endTimeStr, schedule.daily_schedule);
 
-                                                                if (!isWithinAvailability) {
-                                                                    conflictReason = 'availability';
-                                                                } else if (conflictsWithBooking) {
-                                                                    conflictReason = 'booking';
+                                                                    if (!isWithinAvailability) {
+                                                                        conflictReason = 'availability';
+                                                                    } else if (conflictsWithBooking) {
+                                                                        conflictReason = 'booking';
+                                                                    }
+                                                                    isSelectable = isWithinAvailability && !conflictsWithBooking;
                                                                 }
-                                                                isSelectable = isWithinAvailability && !conflictsWithBooking;
-                                                            }
-                                                            
-                                                            const potentialBooking = startTimeStr && endTimeStr ? { start_time: startTimeStr, end_time: endTimeStr } : undefined;
-                                                            
-                                                            const isTopRecommended = worker.recommendationScore && 
-                                                                worker.recommendationScore === Math.max(...availableWorkers.map(w => w.recommendationScore || 0));
-                                                            
-                                                            return (
-                                                            <FormItem key={worker.id} className="w-full">
-                                                                <FormControl>
-                                                                    <Label 
-                                                                        htmlFor={worker.id} 
-                                                                        className={cn(
-                                                                            "block w-full font-medium",
-                                                                            isSelectable ? "cursor-pointer" : "cursor-not-allowed"
-                                                                        )}
-                                                                    >
-                                                                        <RadioGroupItem 
-                                                                            value={worker.id} 
-                                                                            id={worker.id} 
-                                                                            className="sr-only" 
-                                                                            disabled={!isSelectable} 
-                                                                        />
-                                                                        <div className={cn(
-                                                                            "bg-white rounded-lg p-4 border transition-all",
-                                                                            field.value === worker.id 
-                                                                                ? "border-blue-500 ring-2 ring-blue-200 shadow-md" 
-                                                                                : "border-gray-200 hover:border-gray-300",
-                                                                            !isSelectable && "opacity-60 bg-gray-50",
-                                                                        )}>
-                                                                            <div className="flex items-start gap-4">
-                                                                                <div className="relative flex-shrink-0">
-                                                                                    <Avatar className="h-12 w-12 rounded-full">
-                                                                                        <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-bold">
-                                                                                            {getInitials(toTitleCase(worker.name))}
-                                                                                        </AvatarFallback>
-                                                                                </Avatar>
-                                                                                    {isTopRecommended && (
-                                                                                        <div className="absolute -top-1 -right-2 bg-yellow-400 rounded-full p-1 shadow">
-                                                                                            <Award className="h-4 w-4 text-white" />
-                                                                                </div>
-                                                                                    )}
-                                                                            </div>
-                                                                                <div className="flex-1 min-w-0">
-                                                                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                                                                                        <p className="font-bold text-base text-gray-800 truncate">{toTitleCase(worker.name)}</p>
-                                                                                        {isTopRecommended && (
-                                                                                            <Badge variant="default" className="bg-gradient-to-r from-amber-400 to-orange-500 text-white border-none shadow-sm font-semibold">
-                                                                                                <Star className="h-3 w-3 mr-1.5" />
-                                                                                                Recommended
-                                                                                            </Badge>
-                                                                                        )}
-                                                                                    </div>
-                                                                                    <p className="text-sm text-gray-500 mt-0.5">{worker.role || "Professional Technician"}</p>
-                                                                                    
-                                                                                    <div className="flex flex-wrap items-center gap-2 mt-3">
-                                                                                        {worker.recommendationScore != null && (
-                                                                                            <Badge variant="outline" className="text-xs font-semibold bg-green-50 text-green-700 border-green-200">
-                                                                                                <Zap className="h-3 w-3 mr-1.5" />
-                                                                                                Match: {Math.round(worker.recommendationScore)}%
-                                                                                            </Badge>
-                                                                                        )}
-                                                                                        {/* Placeholder for skills */}
-                                                                                        <Badge variant="outline" className="text-xs font-medium bg-blue-50 text-blue-700 border-blue-200">
-                                                                                            Skill Name
-                                                                                        </Badge>
-                                                                                    </div>
-                                                                                </div>
-                                                                            </div>
-                                                                            
-                                                                            <WorkerScheduleDisplay 
-                                                                                worker={worker}
-                                                                                schedule={workerSchedules[worker.id] ?? null}
-                                                                                isLoading={schedulesLoading[worker.id] ?? false}
-                                                                                isSelected={field.value === worker.id}
-                                                                                scheduledDate={scheduledDate}
-                                                                                potentialBooking={potentialBooking}
-                                                                                isSelectable={isSelectable}
-                                                                                conflictReason={conflictReason}
+                                                                
+                                                                const potentialBooking = startTimeStr && endTimeStr ? { start_time: startTimeStr, end_time: endTimeStr } : undefined;
+                                                                
+                                                                const isTopRecommended = index === 0 && (worker.recommendationScore || 0) > 0;
+                                                                
+                                                                return (
+                                                                <FormItem key={worker.id} className="w-full">
+                                                                    <FormControl>
+                                                                        <Label 
+                                                                            htmlFor={worker.id} 
+                                                                            className={cn(
+                                                                                "block w-full font-medium",
+                                                                                isSelectable ? "cursor-pointer" : "cursor-not-allowed"
+                                                                            )}
+                                                                        >
+                                                                            <RadioGroupItem 
+                                                                                value={worker.id} 
+                                                                                id={worker.id} 
+                                                                                className="sr-only" 
+                                                                                disabled={!isSelectable} 
                                                                             />
-                                                                        </div>
-                                                                    </Label>
-                                                                </FormControl>
-                                                                <FormMessage className="pt-2" />
-                                                            </FormItem>
-                                                            );
-                                                        })
-                                                    ) : (
-                                                        <div key="no-workers" className="text-sm text-muted-foreground text-center p-4 border rounded-lg bg-background">
-                                                            No workers available for this time. Adjust the schedule to see options.
-                                                        </div>
-                                                    )}
-                                                </RadioGroup>
-                                                <FormMessage className="pt-2" />
-                                            </FormItem>
-                                        )}
-                                    />
+                                                                            <div className={cn(
+                                                                                "bg-white rounded-lg p-4 border transition-all",
+                                                                                field.value === worker.id 
+                                                                                    ? "border-blue-500 ring-2 ring-blue-200 shadow-md" 
+                                                                                    : "border-gray-200 hover:border-gray-300",
+                                                                                !isSelectable && "opacity-60 bg-gray-50",
+                                                                            )}>
+                                                                                <div className="flex items-start gap-4">
+                                                                                    <div className="relative flex-shrink-0 worker-card-item">
+                                                                                        <Avatar className="h-12 w-12 rounded-full">
+                                                                                            <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-bold">
+                                                                                                {getInitials(toTitleCase(worker.name))}
+                                                                                            </AvatarFallback>
+                                                                                        </Avatar>
+                                                                                        {isTopRecommended && (
+                                                                                            <div className="absolute -top-1 -right-2 bg-yellow-400 rounded-full p-1 shadow">
+                                                                                                <Award className="h-4 w-4 text-white" />
+                                                                                            </div>
+                                                                                        )}
+                                                                                    </div>
+                                                                                    <div className="flex-1 min-w-0">
+                                                                                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 worker-card-item">
+                                                                                            <p className="font-bold text-base text-gray-800 truncate">{toTitleCase(worker.name)}</p>
+                                                                                            {isTopRecommended && (
+                                                                                                <Badge variant="default" className="bg-gradient-to-r from-amber-400 to-orange-500 text-white border-none shadow-sm font-semibold text-xs py-1 px-2.5">
+                                                                                                    <Star className="h-3.5 w-3.5 mr-1.5" />
+                                                                                                    Recommended
+                                                                                                </Badge>
+                                                                                            )}
+                                                                                        </div>
+                                                                                        <p className="text-sm text-gray-500 mt-0.5">{worker.role || "Professional Technician"}</p>
+                                                                                        
+                                                                                        <div className="flex flex-wrap items-center gap-2 mt-3">
+                                                                                            {worker.recommendationScore != null && (
+                                                                                                <Badge variant="outline" className={cn("text-xs font-semibold", getMatchScoreColor(worker.recommendationScore))}>
+                                                                                                    <Zap className="h-3 w-3 mr-1.5" />
+                                                                                                    Match: {Math.round(worker.recommendationScore)}%
+                                                                                                </Badge>
+                                                                                            )}
+                                                                                            {/* This is a placeholder for a real skill */}
+                                                                                            <Badge variant="outline" className="text-xs font-medium bg-blue-50 text-blue-700 border-blue-200">
+                                                                                                Skill Name
+                                                                                            </Badge>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                </div>
+                                                                                
+                                                                                <RecommendationHighlights worker={worker} isTopRecommended={isTopRecommended} />
+
+                                                                                <WorkerScheduleDisplay 
+                                                                                    worker={worker}
+                                                                                    schedule={workerSchedules[worker.id] ?? null}
+                                                                                    isLoading={schedulesLoading[worker.id] ?? false}
+                                                                                    isSelected={field.value === worker.id}
+                                                                                    scheduledDate={scheduledDate}
+                                                                                    potentialBooking={potentialBooking}
+                                                                                    isSelectable={isSelectable}
+                                                                                    conflictReason={conflictReason}
+                                                                                />
+                                                                            </div>
+                                                                        </Label>
+                                                                    </FormControl>
+                                                                    <FormMessage className="pt-2" />
+                                                                </FormItem>
+                                                                );
+                                                            })
+                                                        ) : (
+                                                            <div key="no-workers" className="text-sm text-muted-foreground text-center p-4 border rounded-lg bg-background">
+                                                                No workers available for this time. Adjust the schedule to see options.
+                                                            </div>
+                                                        )}
+                                                    </RadioGroup>
+                                                    <FormMessage className="pt-2" />
+                                                </FormItem>
+                                            )}
+                                        />
+                                     )}
                                 </CardContent>
                             </Card>
 
                             {selectedWorker && selectedClient && (
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle className="flex items-center gap-3 text-xl">
-                                        <span className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-blue-600 font-bold text-lg">4</span>
-                                        <span>Review and Create</span>
-                                    </CardTitle>
-                                    <CardDescription>Review the details below. If everything is correct, create the job.</CardDescription>
-                                </CardHeader>
-                                <CardContent className="space-y-3 text-sm font-medium pt-6">
-                                    <div className="flex items-center justify-between">
-                                        <span className="flex items-center gap-2 text-muted-foreground"><User className="h-4 w-4" /> Client:</span>
-                                        <span className="text-foreground">{selectedClient.name}</span>
-                                    </div>
-                                     <div className="flex items-center justify-between">
-                                        <span className="flex items-center gap-2 text-muted-foreground"><Briefcase className="h-4 w-4" /> Worker:</span>
-                                        <span className="text-foreground">{selectedWorker.name}</span>
-                                    </div>
-                                    <div className="flex items-center justify-between">
-                                        <span className="flex items-center gap-2 text-muted-foreground"><CalendarIcon className="h-4 w-4" /> Date:</span>
-                                        <span className="text-foreground">{scheduledDate ? format(scheduledDate, "PPP") : 'N/A'}</span>
-                                    </div>
-                                    <div className="flex items-center justify-between">
-                                        <span className="flex items-center gap-2 text-muted-foreground"><Clock className="h-4 w-4" /> Time:</span>
-                                        <span className="text-foreground">{startTimeStr} - {endTimeStr}</span>
-                                    </div>
-                                    <div className="flex items-center justify-between">
-                                        <span className="flex items-center gap-2 text-muted-foreground"><Clock className="h-4 w-4" /> Duration:</span>
-                                        <span className="text-foreground">{calculatedDuration}</span>
-                                    </div>
-                                    {form.getValues('workItems') && form.getValues('workItems')!.filter(i => i.value).length > 0 && (
-                                        <div className="pt-4 mt-4 border-t">
-                                            <p className="font-semibold text-gray-800 mb-2">Work Items</p>
-                                            <ul className="space-y-2">
-                                                 {form.getValues('workItems')?.map((item, index) => item.value && (
-                                                    <li key={index} className="flex items-start gap-3">
-                                                        <span className="font-semibold text-blue-600">{index + 1}.</span>
-                                                        <span className="text-gray-700">{item.value}</span>
-                                                    </li>
-                                                 ))}
-                                            </ul>
+                            <div id="review-section" ref={reviewSectionRef}>
+                                <Card>
+                                    <CardHeader>
+                                        <CardTitle className="flex items-center gap-3 text-xl">
+                                            <span className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-blue-600 font-bold text-lg">4</span>
+                                            <span>Review and Create</span>
+                                        </CardTitle>
+                                        <CardDescription>Review the details below. If everything is correct, create the job.</CardDescription>
+                                    </CardHeader>
+                                    <CardContent className="space-y-3 text-sm font-medium pt-6">
+                                        <div className="flex items-center justify-between">
+                                            <span className="flex items-center gap-2 text-muted-foreground"><User className="h-4 w-4" /> Client:</span>
+                                            <span className="text-foreground">{selectedClient.name}</span>
                                         </div>
-                                    )}
-                                </CardContent>
-                            </Card>
+                                         <div className="flex items-center justify-between">
+                                            <span className="flex items-center gap-2 text-muted-foreground"><Briefcase className="h-4 w-4" /> Worker:</span>
+                                            <span className="text-foreground">{selectedWorker.name}</span>
+                                        </div>
+                                        <div className="flex items-center justify-between">
+                                            <span className="flex items-center gap-2 text-muted-foreground"><CalendarIcon className="h-4 w-4" /> Date:</span>
+                                            <span className="text-foreground">{scheduledDate ? format(scheduledDate, "PPP") : 'N/A'}</span>
+                                        </div>
+                                        <div className="flex items-center justify-between">
+                                            <span className="flex items-center gap-2 text-muted-foreground"><Clock className="h-4 w-4" /> Time:</span>
+                                            <span className="text-foreground">{startTimeStr} - {endTimeStr}</span>
+                                        </div>
+                                        <div className="flex items-center justify-between">
+                                            <span className="flex items-center gap-2 text-muted-foreground"><Clock className="h-4 w-4" /> Duration:</span>
+                                            <span className="text-foreground">{calculatedDuration}</span>
+                                        </div>
+                                        {form.getValues('workItems') && form.getValues('workItems')!.filter(i => i.value).length > 0 && (
+                                            <div className="pt-4 mt-4 border-t">
+                                                <p className="font-semibold text-gray-800 mb-2">Work Items</p>
+                                                <ul className="space-y-2">
+                                                     {form.getValues('workItems')?.map((item, index) => item.value && (
+                                                        <li key={index} className="flex items-start gap-3">
+                                                            <span className="font-semibold text-blue-600">{index + 1}.</span>
+                                                            <span className="text-gray-700">{item.value}</span>
+                                                        </li>
+                                                     ))}
+                                                </ul>
+                                            </div>
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            </div>
                             )}
 
                         </div>
@@ -1281,8 +1389,4 @@ export function AssignmentForm({ clients: initialClients, workers: initialWorker
             </DialogContent>
         </Dialog>
     );
-}
-
-function toTitleCase(str: string) {
-    return str.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
 } 

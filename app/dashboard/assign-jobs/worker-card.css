@@ -1,0 +1,18 @@
+/* This CSS targets direct text nodes within the worker-card-item elements
+   using the :not() selector to only affect text nodes, not other elements */
+.worker-card-item {
+  /* Hide direct text nodes using font-size and height */
+  font-size: 0;
+  line-height: 0;
+}
+
+/* Restore text size for actual elements inside */
+.worker-card-item > * {
+  font-size: 1rem;
+  line-height: normal;
+}
+
+/* Specific adjustment for the avatar component text */
+.worker-card-item .bg-gradient-to-br {
+  font-size: 0.875rem;
+} 

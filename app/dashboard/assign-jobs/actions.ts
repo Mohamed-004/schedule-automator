@@ -1,6 +1,6 @@
 'use server';
 
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { createClient } from '@/lib/supabase/server';
 import { cookies } from 'next/headers';
 import { z } from 'zod';
 import { getBusinessIdWithSupa } from '@/lib/getBusinessId';
@@ -24,19 +24,8 @@ const createClientSchema = z.object({
     address: z.string().optional(),
 });
 
-export async function createClient(formData: FormData) {
-    const cookieStore = cookies() as any;
-    const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        {
-            cookies: {
-                get: (name: string) => {
-                    return cookieStore.get(name)?.value;
-                },
-            },
-        }
-    );
+export async function createNewClient(formData: FormData) {
+    const supabase = await createClient();
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { success: false, error: 'Authentication failed.' };
@@ -73,18 +62,7 @@ export async function createClient(formData: FormData) {
 
 
 export async function getAvailableWorkersAction(startTime: string, endTime: string) {
-    const cookieStore = cookies() as any;
-    const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        {
-            cookies: {
-                get: (name: string) => {
-                    return cookieStore.get(name)?.value;
-                },
-            },
-        }
-    );
+    const supabase = await createClient();
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { success: false, error: 'Authentication failed.' };
@@ -106,18 +84,7 @@ export async function getAvailableWorkersAction(startTime: string, endTime: stri
 }
 
 export async function getWorkerScheduleAction(workerId: string, date: string) {
-    const cookieStore = cookies() as any;
-    const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        {
-            cookies: {
-                get: (name: string) => {
-                    return cookieStore.get(name)?.value;
-                },
-            },
-        }
-    );
+    const supabase = await createClient();
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { success: false, error: 'Authentication failed.' };
@@ -140,24 +107,7 @@ export async function getWorkerScheduleAction(workerId: string, date: string) {
 }
 
 export async function createJob(jobData: z.infer<typeof createJobSchema>) {
-    const cookieStore = cookies() as any;
-    const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        {
-          cookies: {
-            get(name: string) {
-              return cookieStore.get(name)?.value
-            },
-            set(name: string, value: string, options: CookieOptions) {
-              cookieStore.set({ name, value, ...options })
-            },
-            remove(name: string, options: CookieOptions) {
-              cookieStore.set({ name, value: '', ...options })
-            },
-          },
-        }
-    );
+    const supabase = await createClient();
 
     const validation = createJobSchema.safeParse(jobData);
     if (!validation.success) {
@@ -223,18 +173,7 @@ export async function createJob(jobData: z.infer<typeof createJobSchema>) {
 }
 
 export async function getRecommendedWorkersAction(startTime: string, endTime: string, clientId: string, jobTypeId?: string) {
-    const cookieStore = cookies() as any;
-    const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        {
-            cookies: {
-                get: (name: string) => {
-                    return cookieStore.get(name)?.value;
-                },
-            },
-        }
-    );
+    const supabase = await createClient();
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { success: false, error: 'Authentication failed.' };
@@ -254,8 +193,6 @@ export async function getRecommendedWorkersAction(startTime: string, endTime: st
         if (error) {
             console.error("Error fetching recommended workers:", error);
             
-            // Fallback to regular available workers if the recommendation function fails
-            // This ensures the app still works even if the premium features aren't fully set up
             const { data: fallbackData, error: fallbackError } = await supabase.rpc('get_available_workers', {
                 p_business_id: businessId,
                 p_job_start_time: startTime,
@@ -266,14 +203,26 @@ export async function getRecommendedWorkersAction(startTime: string, endTime: st
                 return { success: false, error: 'Failed to fetch workers.', details: fallbackError.message };
             }
             
+            // Clean worker names in fallback data
+            const cleanedFallbackData = fallbackData.map((worker: any) => ({
+                ...worker,
+                worker_name: worker.worker_name.replace(/\s+\d+$/, '')
+            }));
+            
             return { 
                 success: true, 
-                workers: fallbackData,
+                workers: cleanedFallbackData,
                 warning: 'Recommendation engine unavailable, showing all available workers instead.'
             };
         }
 
-        return { success: true, workers: data };
+        // Clean worker names in the recommended workers data
+        const cleanedData = data.map((worker: any) => ({
+            ...worker,
+            worker_name: worker.worker_name.replace(/\s+\d+$/, '')
+        }));
+
+        return { success: true, workers: cleanedData };
     } catch (e: any) {
         console.error("Error in getRecommendedWorkersAction:", e);
         return { success: false, error: 'An unexpected error occurred.', details: e.message };

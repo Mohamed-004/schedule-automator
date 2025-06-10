@@ -14,7 +14,8 @@ RETURNS TABLE (
     daily_schedule JSONB,
     daily_exception_reason TEXT,
     exception_start_time TIME,
-    exception_end_time TIME
+    exception_end_time TIME,
+    daily_availability_slots JSONB
 ) 
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -30,6 +31,7 @@ DECLARE
     v_weekly_hours_goal NUMERIC;
     v_daily_hours_goal NUMERIC;
     v_exception RECORD;
+    v_daily_availability_slots JSONB;
 BEGIN
     -- Get business timezone
     SELECT b.timezone INTO v_business_timezone
@@ -90,16 +92,20 @@ BEGIN
             v_daily_hours_goal := COALESCE(EXTRACT(EPOCH FROM (v_exception.end_time - v_exception.start_time)) / 3600, 0);
             exception_start_time := v_exception.start_time;
             exception_end_time := v_exception.end_time;
+            v_daily_availability_slots := jsonb_build_array(jsonb_build_object('start_time', v_exception.start_time, 'end_time', v_exception.end_time));
         ELSE
             v_daily_hours_goal := 0;
             exception_start_time := NULL;
             exception_end_time := NULL;
+            v_daily_availability_slots := '[]'::jsonb;
         END IF;
         daily_exception_reason := v_exception.reason;
     ELSE
         -- No exception, use default weekly availability. SUM all slots for the day.
-        SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (wa.end_time - wa.start_time)) / 3600), 0)
-        INTO v_daily_hours_goal
+        SELECT 
+            COALESCE(SUM(EXTRACT(EPOCH FROM (wa.end_time - wa.start_time)) / 3600), 0),
+            jsonb_agg(jsonb_build_object('start_time', wa.start_time, 'end_time', wa.end_time)) FILTER (WHERE wa.id IS NOT NULL)
+        INTO v_daily_hours_goal, v_daily_availability_slots
         FROM worker_weekly_availability wa
         WHERE wa.worker_id = p_worker_id AND wa.day_of_week = v_day_of_week;
         daily_exception_reason := NULL;
@@ -113,6 +119,7 @@ BEGIN
     daily_hours_worked := v_total_daily_minutes_worked / 60.0;
     daily_hours_goal := COALESCE(v_daily_hours_goal, 0);
     daily_schedule := v_daily_schedule;
+    daily_availability_slots := COALESCE(v_daily_availability_slots, '[]'::jsonb);
     
     -- Return the single row of calculated data
     RETURN NEXT;
