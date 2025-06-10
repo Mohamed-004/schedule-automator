@@ -35,7 +35,7 @@ export function ClientPortal() {
   const [jobStatus, setJobStatus] = useState(mockJobData.status)
   const [isRescheduleOpen, setIsRescheduleOpen] = useState(false)
   const [isCancelOpen, setIsCancelOpen] = useState(false)
-  const [selectedSlot, setSelectedSlot] = useState(null)
+  const [selectedSlot, setSelectedSlot] = useState<typeof availableSlots[0] | null>(null)
   const [cancelReason, setCancelReason] = useState("")
 
   const handleConfirm = () => {

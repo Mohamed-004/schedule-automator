@@ -66,12 +66,12 @@ export function CalendarView() {
               <CardTitle className="text-sm font-medium text-center">
                 {day}
                 <Badge variant="outline" className="ml-2">
-                  {mockWeeklyJobs[day].length}
+                  {(mockWeeklyJobs as any)[day].length}
                 </Badge>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {mockWeeklyJobs[day].map((job) => (
+              {(mockWeeklyJobs as any)[day].map((job: any) => (
                 <Dialog key={job.id}>
                   <DialogTrigger asChild>
                     <div className="p-2 bg-blue-50 border border-blue-200 rounded-md cursor-pointer hover:bg-blue-100 transition-colors">

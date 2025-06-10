@@ -1,5 +1,5 @@
 import { ReactNode } from 'react'
-import { Sidebar } from './sidebar'
+import Sidebar from './sidebar'
 import { Header } from './header'
 
 interface DashboardLayoutProps {
@@ -11,7 +11,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     <div className="min-h-screen bg-gray-50">
       <Header />
       <div className="flex">
-        <Sidebar />
+        <Sidebar open={true} onClose={() => {}} />
         <main className="flex-1 p-6">
           {children}
         </main>

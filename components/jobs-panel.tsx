@@ -14,7 +14,7 @@ import { Job } from '@/lib/types'
 import { useWorkers } from '@/hooks/use-workers'
 import { useBusiness } from '@/hooks/use-business'
 import JobForm from '@/components/dashboard/job-form'
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { createClient } from "@/lib/supabase/client"
 
 type JobsPanelProps = {
   jobs: Job[]
@@ -57,9 +57,9 @@ function countryToFlag(countryCode: string) {
 
 export function JobsPanel({ jobs, refreshJobs }: JobsPanelProps) {
   const { business } = useBusiness();
-  const { workers, loading: workersLoading, error: workersError } = useWorkers(business?.id);
+  const { workers, loading: workersLoading, error: workersError } = useWorkers();
   const [clients, setClients] = useState<any[]>([]);
-  const supabase = createClientComponentClient();
+  const supabase = createClient();
   
   // Debug session
   useEffect(() => {

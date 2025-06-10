@@ -1,7 +1,7 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase-client'
+import { createClient } from '@/lib/supabase/client'
 import { User, Session } from '@supabase/supabase-js'
 
 interface AuthContextType {
@@ -28,6 +28,8 @@ export function SimpleAuthProvider({ children }: { children: React.ReactNode }) 
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    const supabase = createClient()
+    
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
@@ -50,6 +52,7 @@ export function SimpleAuthProvider({ children }: { children: React.ReactNode }) 
 
   const signInAnonymously = async () => {
     try {
+      const supabase = createClient()
       const { data, error } = await supabase.auth.signInAnonymously()
       if (error) throw error
       console.log('Signed in anonymously:', data.user?.id)

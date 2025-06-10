@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { workerOperations } from '@/lib/db-operations'
+import { useWorkers } from '@/hooks/use-workers'
 
 interface WorkerFormProps {
   onClose: () => void
@@ -12,15 +12,17 @@ export function WorkerForm({ onClose }: WorkerFormProps) {
     name: '',
     email: '',
     phone: '',
+    role: 'technician' as 'technician' | 'dispatcher' | 'manager',
   })
   const [loading, setLoading] = useState(false)
+  const { addWorker } = useWorkers()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
 
     try {
-      await workerOperations.create(formData)
+      await addWorker(formData)
       onClose()
     } catch (error) {
       console.error('Failed to create worker:', error)
@@ -29,7 +31,7 @@ export function WorkerForm({ onClose }: WorkerFormProps) {
     }
   }
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target
     setFormData(prev => ({ ...prev, [name]: value }))
   }
@@ -100,6 +102,27 @@ export function WorkerForm({ onClose }: WorkerFormProps) {
             required
             className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           />
+        </div>
+
+        <div>
+          <label
+            htmlFor="role"
+            className="block text-sm font-medium text-gray-700"
+          >
+            Role
+          </label>
+          <select
+            id="role"
+            name="role"
+            value={formData.role}
+            onChange={handleChange}
+            required
+            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="technician">Technician</option>
+            <option value="dispatcher">Dispatcher</option>
+            <option value="manager">Manager</option>
+          </select>
         </div>
 
         <div className="flex justify-end gap-2">

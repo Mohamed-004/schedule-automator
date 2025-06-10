@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Calendar, momentLocalizer, SlotInfo, Event } from 'react-big-calendar';
 import moment from 'moment';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
-import { supabase } from '@/lib/supabase-client';
+import { createClient } from '@/lib/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { AvailabilitySlot, AvailabilityException } from '@/lib/types';
 import { useToast } from '@/components/ui/use-toast';
@@ -30,6 +30,7 @@ export default function WorkerAvailabilityCalendar({
   const [events, setEvents] = useState<AvailabilityEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
+  const supabase = createClient();
 
   useEffect(() => {
     if (workerId) {

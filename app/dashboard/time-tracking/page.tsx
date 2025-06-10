@@ -1,4 +1,6 @@
-import { Calendar } from '@/components/schedule/calendar'
+'use client'
+
+import Calendar from '@/components/schedule/calendar'
 import { TimeEntryList } from '@/components/time-tracking/time-entry-list'
 import { useJobs } from '@/hooks/use-jobs'
 import { useState } from 'react'

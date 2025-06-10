@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { createClient } from '@/lib/supabase/client';
 import dynamic from 'next/dynamic';
 import 'react-phone-number-input/style.css';
 import { useBusiness } from '@/hooks/use-business';
@@ -38,7 +38,7 @@ export default function JobForm({ onSubmit, onCancel, saving, initialData }: Job
   const [addingClient, setAddingClient] = useState(false);
   const [clientError, setClientError] = useState<string | null>(null);
   const [clientSearch, setClientSearch] = useState('');
-  const supabase = createClientComponentClient();
+  const supabase = createClient();
 
   useEffect(() => {
     async function fetchClients() {
@@ -81,7 +81,7 @@ export default function JobForm({ onSubmit, onCancel, saving, initialData }: Job
       return;
     }
     // Allow N/A worker (null or empty string)
-    const jobData = { ...form };
+    const jobData: any = { ...form };
     if (!form.worker_id || form.worker_id === 'na') {
       delete jobData.worker_id;
     }
