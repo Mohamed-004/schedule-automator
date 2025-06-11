@@ -14,6 +14,8 @@ interface UseWorkersResult {
   loading: boolean
   error: Error | null
   refresh: () => void
+  addWorker: (worker: Omit<DBWorker, 'id' | 'created_at' | 'updated_at'>) => Promise<WorkerWithScheduleInfo | null>
+  deleteWorker: (id: string) => Promise<boolean>
 }
 
 export function useWorkers(): UseWorkersResult {
@@ -44,11 +46,54 @@ export function useWorkers(): UseWorkersResult {
     fetchWorkers()
   }, [fetchWorkers])
 
+  const addWorker = async (worker: Omit<DBWorker, 'id' | 'created_at' | 'updated_at'>): Promise<WorkerWithScheduleInfo | null> => {
+    try {
+      const response = await fetch('/api/workers', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(worker),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Failed to add worker: ${response.statusText}`)
+      }
+
+      const newWorker = await response.json()
+      setWorkers(prev => prev ? [...prev, newWorker] : [newWorker])
+      return newWorker
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('Unknown error occurred'))
+      return null
+    }
+  }
+
+  const deleteWorker = async (id: string): Promise<boolean> => {
+    try {
+      const response = await fetch(`/api/workers/${id}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        throw new Error(`Failed to delete worker: ${response.statusText}`)
+      }
+
+      setWorkers(prev => prev ? prev.filter(worker => worker.id !== id) : [])
+      return true
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('Unknown error occurred'))
+      return false
+    }
+  }
+
   return {
     workers,
     loading,
     error,
     refresh: fetchWorkers,
+    addWorker,
+    deleteWorker,
   }
 } 
  

@@ -81,23 +81,25 @@ export default function JobsPage() {
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full mobile-container">
       {/* Header */}
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between">
-        <div className="mb-4 sm:mb-0">
-          <h1 className="text-2xl font-bold text-gray-900">Jobs</h1>
-          <div className="text-sm text-gray-500 mt-1">
+      <div className="mb-3 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between">
+        <div className="mb-2 sm:mb-0">
+          <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-gray-900">Jobs</h1>
+          <div className="text-xs text-gray-500 mt-1">
             <span>Jobs › All Jobs</span>
           </div>
         </div>
-        <div className="flex items-center space-x-4">
-          <Button variant="outline" size="sm">
-            <BarChart3 className="h-4 w-4 mr-2" />
-            Reports
+        <div className="flex items-center space-x-2 sm:space-x-4">
+          <Button variant="outline" size="sm" className="text-xs h-8 sm:h-9">
+            <BarChart3 className="h-3 w-3 mr-1 sm:mr-2" />
+            <span className="hidden xs:inline">Reports</span>
+            <span className="xs:hidden">📊</span>
           </Button>
-          <Button onClick={handleCreateJob}>
-            <Plus className="h-4 w-4 mr-2" />
-            New Job
+          <Button onClick={handleCreateJob} size="sm" className="text-xs h-8 sm:h-9">
+            <Plus className="h-3 w-3 mr-1 sm:mr-2" />
+            <span className="hidden xs:inline">New Job</span>
+            <span className="xs:hidden">New</span>
           </Button>
         </div>
       </div>
@@ -106,31 +108,34 @@ export default function JobsPage() {
       <StatsRibbon />
       
       {/* View Selection */}
-      <div className="mb-6 border-b border-gray-200">
-        <div className="flex space-x-8">
-          {[
-            { id: 'timeline', label: 'Timeline Scheduler', icon: Clock },
-            { id: 'table', label: 'Table View', icon: '📋' },
-            { id: 'board', label: 'Board View', icon: '📌' },
-            { id: 'calendar', label: 'Calendar View', icon: Calendar },
-          ].map((view) => (
-            <button
-              key={view.id}
-              className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
-                selectedView === view.id
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-              onClick={() => setSelectedView(view.id)}
-            >
-              {typeof view.icon === 'string' ? (
-                <span>{view.icon}</span>
-              ) : (
-                <view.icon className="h-4 w-4" />
-              )}
-              {view.label}
-            </button>
-          ))}
+      <div className="mb-4 sm:mb-6 border-b border-gray-200">
+        <div className="mobile-scroll-x pb-1 -mx-4 px-4 sm:mx-0 sm:px-0">
+          <div className="flex space-x-3 sm:space-x-6 md:space-x-8">
+            {[
+              { id: 'timeline', label: 'Timeline Scheduler', icon: Clock },
+              { id: 'table', label: 'Table View', icon: '📋' },
+              { id: 'board', label: 'Board View', icon: '📌' },
+              { id: 'calendar', label: 'Calendar View', icon: Calendar },
+            ].map((view) => (
+              <button
+                key={view.id}
+                className={`py-3 border-b-2 font-medium text-xs flex items-center gap-1 sm:gap-2 whitespace-nowrap flex-shrink-0 ${
+                  selectedView === view.id
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+                onClick={() => setSelectedView(view.id)}
+              >
+                {typeof view.icon === 'string' ? (
+                  <span className="text-sm">{view.icon}</span>
+                ) : (
+                  <view.icon className="h-3 w-3 sm:h-4 sm:w-4" />
+                )}
+                <span className="mobile-text">{view.label.split(' ')[0]}</span>
+                <span className="hidden sm:inline">{view.label.split(' ').slice(1).join(' ')}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       

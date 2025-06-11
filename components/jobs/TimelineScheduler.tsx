@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useMemo, useCallback } from 'react'
-import { format, startOfDay, addHours, isSameDay, parseISO, differenceInMinutes, addDays } from 'date-fns'
+import { format, startOfDay, addHours, isSameDay, parseISO, differenceInMinutes, addDays, startOfWeek, isToday } from 'date-fns'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Clock, MapPin, User, AlertTriangle, Calendar, Filter, X, CalendarClock, ArrowLeft, ArrowRight, MoreHorizontal, Phone, Activity, BriefcaseBusiness, ChevronRight, Edit, Check, RotateCw, Trash2, ExternalLink } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -218,7 +218,7 @@ export const TimelineScheduler = React.memo(function TimelineScheduler({
       }
 
       if (activeFilters.todaysScheduleOnly && !isSameDay(jobDate, selectedDate)) {
-        return false;
+          return false;
       }
 
       return true;
@@ -388,470 +388,970 @@ export const TimelineScheduler = React.memo(function TimelineScheduler({
     return calculateTimePosition(currentHour, currentMinute, START_HOUR, END_HOUR);
   }
 
-  // Week view rendering
+  // Week view rendering with enhanced responsive layout
   if (viewMode === 'week') {
     return (
-      <div className="flex flex-col h-full bg-gray-50">
-        <div className="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-gray-200 shadow-sm">
-          <div className="p-4 lg:p-6">
-            <div className="flex flex-col space-y-4 lg:flex-row lg:items-center lg:justify-between lg:space-y-0">
-              <div className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:space-y-0 sm:space-x-4">
-                <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Timeline Scheduler</h2>
-                <DateRangePicker
-                  selectedDate={selectedDate}
-                  onDateChange={onDateChange}
-                  viewMode={viewMode}
-                  onViewModeChange={onViewModeChange}
-                />
+      <TooltipProvider>
+        <div className="flex flex-col h-full bg-gray-50">
+          {/* Header Controls - Mobile Optimized */}
+          <div className="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-gray-200 shadow-sm mobile-container">
+            <div className="px-2 py-2 sm:px-3 sm:py-3 lg:px-6 lg:py-4">
+              <div className="flex flex-col space-y-2 lg:flex-row lg:items-center lg:justify-between lg:space-y-0">
+                <div className="flex flex-col space-y-2 sm:flex-row sm:items-center sm:space-y-0 sm:space-x-3">
+                  <h2 className="text-base sm:text-lg lg:text-xl font-bold text-gray-900 truncate">Timeline Scheduler</h2>
+                  <div className="flex-shrink-0">
+                    <DateRangePicker
+                      selectedDate={selectedDate}
+                      onDateChange={onDateChange}
+                      viewMode={viewMode}
+                      onViewModeChange={onViewModeChange}
+                    />
+                  </div>
+                </div>
+              </div>
+              
+              {/* Mobile-Optimized Filters */}
+              <div className="mt-2 lg:mt-4">
+                <div className="flex items-center justify-between mb-1.5 sm:mb-2">
+                  <div className="flex items-center gap-1 sm:gap-2">
+                    <Filter className="h-3 w-3 text-blue-600 flex-shrink-0" />
+                    <span className="text-xs font-medium text-gray-700">Filters</span>
+                  </div>
+                  
+                  {/* Reset Filters - Mobile Friendly */}
+                  {Object.values(activeFilters).some(Boolean) && (
+                    <button
+                      onClick={() => setActiveFilters({
+                        availableWorkersOnly: false,
+                        urgentJobsOnly: false,
+                        todaysScheduleOnly: false,
+                        overlappingJobsOnly: false,
+                        jobsWithNotesOnly: false,
+                        overbookedWorkersOnly: false,
+                      })}
+                      className="px-2 py-1 bg-white border border-gray-300 rounded text-xs font-medium text-gray-700 hover:bg-gray-100 transition-colors flex-shrink-0"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+                
+                {/* Filter Buttons - Mobile Scroll */}
+                <div className="mobile-scroll-x -mx-2 px-2 sm:mx-0 sm:px-0">
+                  <div className="flex gap-1.5 min-w-max pb-1">
+                    <button
+                      onClick={() => toggleFilter('availableWorkersOnly')}
+                      className={cn(
+                        "flex items-center px-2 py-1 rounded text-xs font-medium transition-colors flex-shrink-0 whitespace-nowrap",
+                        activeFilters.availableWorkersOnly
+                          ? "bg-green-100 text-green-700 border border-green-200"
+                          : "bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200"
+                      )}
+                    >
+                      Available ({filterStats.availableWorkers})
+                    </button>
+                    
+                    <button
+                      onClick={() => toggleFilter('urgentJobsOnly')}
+                      className={cn(
+                        "flex items-center px-2 py-1 rounded text-xs font-medium transition-colors flex-shrink-0 whitespace-nowrap",
+                        activeFilters.urgentJobsOnly
+                          ? "bg-red-100 text-red-700 border border-red-200"
+                          : "bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200"
+                      )}
+                    >
+                      Urgent ({filterStats.urgentJobs})
+                    </button>
+                    
+                    <button
+                      onClick={() => toggleFilter('overlappingJobsOnly')}
+                      className={cn(
+                        "flex items-center px-2 py-1 rounded text-xs font-medium transition-colors flex-shrink-0 whitespace-nowrap",
+                        activeFilters.overlappingJobsOnly
+                          ? "bg-amber-100 text-amber-700 border border-amber-200"
+                          : "bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200"
+                      )}
+                    >
+                      Conflicts ({filterStats.overlappingJobs})
+                    </button>
+                    
+                    <button
+                      onClick={() => toggleFilter('overbookedWorkersOnly')}
+                      className={cn(
+                        "flex items-center px-2 py-1 rounded text-xs font-medium transition-colors flex-shrink-0 whitespace-nowrap",
+                        activeFilters.overbookedWorkersOnly
+                          ? "bg-blue-100 text-blue-700 border border-blue-200"
+                          : "bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200"
+                      )}
+                    >
+                      Overbooked ({filterStats.overbookedWorkers})
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Fully Responsive Timeline Container */}
+          <div className="flex-1 overflow-hidden max-w-full">
+            <div className="h-full flex flex-col max-w-full">
+              {/* Desktop: Timeline Grid with Horizontal Scroll */}
+              <div className="hidden lg:flex flex-1 overflow-hidden max-w-full">
+                <div className="flex h-full timeline-container no-overscroll max-w-full">
+                  {/* Left: Empty - Worker info now in WeekWorkerLane */}
+                  <div className="sticky left-0 z-20 bg-white border-r border-gray-200 shadow-lg flex-shrink-0 w-0">
+                  </div>
+
+                  {/* Right: Scrollable Week Grid */}
+                  <div className="flex-1 overflow-x-auto timeline-scroll">
+                    <div className="min-w-[700px]">
+                      <WeekTimelineHeader selectedDate={selectedDate} hourWidth={100} />
+                      <div className="flex-1 overflow-y-auto touch-scroll">
+                        {filteredWorkers.map((worker, index) => (
+                          <WeekWorkerLane
+                            key={worker.id}
+                            worker={worker}
+                            jobs={workerJobs[worker.id] || []}
+                            selectedDate={selectedDate}
+                            hourWidth={100}
+                            height={180}
+                            isEven={index % 2 === 0}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Mobile/Tablet: Stacked Cards Layout */}
+              <div className="flex lg:hidden flex-col flex-1 overflow-hidden max-w-full">
+                <div className="flex-1 overflow-y-auto touch-scroll p-2 sm:p-4 space-y-3 sm:space-y-4 max-w-full">
+                  {filteredWorkers.map((worker, index) => (
+                    <motion.div
+                      key={worker.id}
+                      className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden max-w-full"
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.3, delay: index * 0.1 }}
+                    >
+                      {/* Mobile Worker Header */}
+                      <div className={cn(
+                        "p-3 border-b border-gray-200",
+                        worker.status === 'available' ? 'bg-gradient-to-r from-green-50 to-blue-50' : 'bg-gradient-to-r from-gray-50 to-white'
+                      )}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center">
+                            <div className="relative mr-3">
+                              <Avatar className="h-12 w-12 border-2 border-white shadow-sm">
+                                <AvatarImage src={worker.avatar} alt={worker.name} />
+                                <AvatarFallback className="text-sm font-semibold bg-blue-500 text-white">
+                                  {worker.name.split(' ').map(n => n[0]).join('')}
+                                </AvatarFallback>
+                              </Avatar>
+                              
+                              {/* Status Indicator */}
+                              <div className={cn(
+                                "absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-white",
+                                worker.status === 'available' ? 'bg-green-500' : 'bg-gray-400'
+                              )} />
+                            </div>
+                            
+                            <div>
+                              <div className="font-semibold truncate-text">{worker.name}</div>
+                              <div className="text-xs text-gray-500 truncate-text">{worker.role}</div>
+                              <div className="flex items-center mt-1">
+                                <div className={cn(
+                                  "text-xs px-1.5 py-0.5 rounded-full",
+                                  worker.status === 'available' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                                )}>
+                                  {worker.status === 'available' ? 'Available' : 'Unavailable'}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Mobile Timeline Container */}
+                      <div className="mobile-container py-2">
+                        {/* Mobile View based on viewMode - String comparison to avoid TS error */}
+                        {String(viewMode) === 'day' ? (
+                          /* Mobile Day View - Hours */
+                          <div className="w-full overflow-x-auto timeline-scroll no-overscroll">
+                            <div className="relative w-max" style={{ paddingBottom: '8px' }}>
+                              {/* Enhanced Hour Headers */}
+                              <div className="flex gap-0.5 min-w-max">
+                                {timeSlots.map((hour, hourIndex) => (
+                                  <div key={hour} className="flex-shrink-0" style={{ width: '70px' }}>
+                                    <div className={cn(
+                                      'text-xs font-medium text-center py-1 px-1 rounded',
+                                      (hour >= 9 && hour < 17) ? 'bg-blue-50 text-blue-700' : 'bg-gray-50 text-gray-600'
+                                    )}>
+                                      {hour % 12 === 0 ? '12' : hour % 12}:00 {hour >= 12 ? 'PM' : 'AM'}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                              
+                              {/* Current Time Indicator */}
+                              {isSameDay(selectedDate, new Date()) && (
+                                <div 
+                                  className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10" 
+                                  style={{ 
+                                    left: `${getCurrentTimePosition()}px`,
+                                    height: '100%'
+                                  }}
+                                />
+                              )}
+                              
+                              {/* Timeline Jobs */}
+                              <div className="relative h-16 mt-1">
+                                {workerJobs[worker.id]?.map((job, jobIndex) => {
+                                  const jobDate = parseISO(job.scheduled_at);
+                                  const startHour = jobDate.getHours();
+                                  const startMinute = jobDate.getMinutes();
+                                  
+                                  // Calculate position based on hours from start of day
+                                  const startHourIndex = timeSlots.findIndex(h => h === startHour);
+                                  const minuteOffset = (startMinute / 60) * 70; // 70px per hour
+                                  const leftPosition = (startHourIndex * 70) + minuteOffset;
+                                  
+                                  // Calculate width based on duration
+                                  const widthHours = job.duration_hours || 1;
+                                  const jobWidth = Math.max(60, widthHours * 70);
+                                  
+                                  return (
+                                    <div
+                                      key={job.id}
+                                      className={cn(
+                                        "absolute top-0 rounded-md py-1 px-2 cursor-pointer border-l-4 shadow-sm",
+                                        statusColors[job.status]?.border,
+                                        statusColors[job.status]?.bg,
+                                        'hover:shadow-md active:scale-95 transition-all duration-150'
+                                      )}
+                                      style={{
+                                        left: `${leftPosition}px`,
+                                        width: `${jobWidth}px`,
+                                        height: '44px'
+                                      }}
+                                      onClick={() => {
+                                        setSelectedJob(job);
+                                        setShowJobDetails(true);
+                                      }}
+                                    >
+                                      <div className="text-xs font-medium truncate-text">{job.title}</div>
+                                      <div className="text-xs truncate-text">
+                                        {format(jobDate, 'h:mm a')}
+                                        {job.duration_hours > 0 ? ` - ${format(addHours(jobDate, job.duration_hours), 'h:mm a')}` : ''}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          /* Mobile Week View - Days */
+                          <div className="w-full overflow-x-auto timeline-scroll no-overscroll">
+                            <div className="grid grid-cols-7 gap-1 min-w-max" style={{ minWidth: '490px' }}>
+                              {Array.from({ length: 7 }, (_, dayIndex) => {
+                                const day = addDays(startOfWeek(selectedDate, { weekStartsOn: 1 }), dayIndex);
+                                const dayJobs = (workerJobs[worker.id] || []).filter(job => {
+                                  const jobDate = parseISO(job.scheduled_at);
+                                  return isSameDay(jobDate, day);
+                                });
+
+                                return (
+                                  <div key={dayIndex} className="space-y-1 w-[70px]">
+                                    <div className={cn(
+                                      'text-xs font-medium text-center py-1 px-1 rounded',
+                                      isToday(day) ? 'bg-blue-50 text-blue-700' : 'bg-gray-50 text-gray-600'
+                                    )}>
+                                      {format(day, 'EEE')}
+                                    </div>
+                                    <div className={cn(
+                                      'text-base font-bold text-center',
+                                      isToday(day) ? 'text-blue-600' : 'text-gray-900'
+                                    )}>
+                                      {format(day, 'd')}
+                                    </div>
+                                    <div className="space-y-1 min-h-[80px]">
+                                      {dayJobs.slice(0, 3).map((job, jobIndex) => (
+                                        <div
+                                          key={job.id}
+                                          className={cn(
+                                            'p-1 rounded text-xs cursor-pointer transition-all',
+                                            statusColors[job.status]?.bg,
+                                            'border-l-2 border-gray-200 hover:shadow-sm active:scale-95'
+                                          )}
+                                          style={{
+                                            borderLeftColor: job.priority === 'urgent' ? '#ef4444' : 
+                                                          job.priority === 'high' ? '#f97316' : 
+                                                          job.priority === 'medium' ? '#3b82f6' : '#6b7280'
+                                          }}
+                                          onClick={() => {
+                                            setSelectedJob(job);
+                                            setShowJobDetails(true);
+                                          }}
+                                        >
+                                          <div className="font-medium truncate-text">{job.title}</div>
+                                          <div className="text-xs text-gray-500 truncate-text">
+                                            {format(parseISO(job.scheduled_at), 'h:mm a')}
+                                          </div>
+                                        </div>
+                                      ))}
+                                      {dayJobs.length > 3 && (
+                                        <div className="text-center text-xs text-gray-500 mt-1">
+                                          +{dayJobs.length - 3} more
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
         </div>
-
-        <div className="flex flex-1 overflow-hidden">
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <WeekTimelineHeader selectedDate={selectedDate} hourWidth={100} />
-            <div className="flex-1 overflow-auto">
-              {filteredWorkers.map((worker, index) => (
-                <WeekWorkerLane
-                  key={worker.id}
-                  worker={worker}
-                  jobs={workerJobs[worker.id] || []}
-                  selectedDate={selectedDate}
-                  hourWidth={100}
-                  height={180}
-                  isEven={index % 2 === 0}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+      </TooltipProvider>
     );
   }
 
-  // Day view rendering with unified CSS Grid approach
+  // Day view rendering with fully responsive layout
   return (
     <TooltipProvider>
       <div className="flex flex-col h-full bg-gray-50">
-        {/* Header Controls - Sticky */}
-        <div className="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-gray-200 shadow-sm">
-          <div className="p-4 lg:p-6">
-            <div className="flex flex-col space-y-4 lg:flex-row lg:items-center lg:justify-between lg:space-y-0">
-              <div className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:space-y-0 sm:space-x-4">
-                <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Timeline Scheduler</h2>
-                <DateRangePicker
-                  selectedDate={selectedDate}
-                  onDateChange={onDateChange}
-                  viewMode={viewMode}
-                  onViewModeChange={onViewModeChange}
-                />
+        {/* Header Controls - Mobile Optimized */}
+        <div className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm mobile-container">
+          <div className="px-2 py-2 sm:px-3 sm:py-3 lg:px-6 lg:py-4">
+            <div className="flex flex-col space-y-2 lg:flex-row lg:items-center lg:justify-between lg:space-y-0">
+              <div className="flex flex-col space-y-2 sm:flex-row sm:items-center sm:space-y-0 sm:space-x-3">
+                <h2 className="text-base sm:text-lg lg:text-xl font-bold text-gray-900 truncate">Timeline Scheduler</h2>
+                <div className="flex-shrink-0">
+                  <DateRangePicker
+                    selectedDate={selectedDate}
+                    onDateChange={onDateChange}
+                    viewMode={viewMode}
+                    onViewModeChange={onViewModeChange}
+                  />
+                </div>
               </div>
             </div>
             
-            {/* Enhanced Filters */}
-            <div className="flex items-center justify-between space-x-4 p-3 bg-white/90 border border-gray-200 rounded-lg shadow-sm backdrop-blur-sm mt-4">
-              <div className="flex items-center gap-3 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <Filter className="h-4 w-4 text-blue-600" />
-                  <span className="text-sm font-medium text-gray-700">Quick Filters:</span>
+            {/* Mobile-Optimized Filters */}
+            <div className="mt-2 lg:mt-4">
+              <div className="flex items-center justify-between mb-1.5 sm:mb-2">
+                <div className="flex items-center gap-1 sm:gap-2">
+                  <Filter className="h-3 w-3 text-blue-600 flex-shrink-0" />
+                  <span className="text-xs font-medium text-gray-700">Filters</span>
                 </div>
                 
-                <button
-                  onClick={() => toggleFilter('availableWorkersOnly')}
-                  className={cn(
-                    "flex items-center px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-                    activeFilters.availableWorkersOnly
-                      ? "bg-green-100 text-green-700 border border-green-200"
-                      : "bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200"
-                  )}
-                >
-                  Available Workers ({filterStats.availableWorkers})
-                </button>
-                
-                <button
-                  onClick={() => toggleFilter('urgentJobsOnly')}
-                  className={cn(
-                    "flex items-center px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-                    activeFilters.urgentJobsOnly
-                      ? "bg-red-100 text-red-700 border border-red-200"
-                      : "bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200"
-                  )}
-                >
-                  Urgent Jobs ({filterStats.urgentJobs})
-                </button>
-                
-                <button
-                  onClick={() => toggleFilter('overlappingJobsOnly')}
-                  className={cn(
-                    "flex items-center px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-                    activeFilters.overlappingJobsOnly
-                      ? "bg-amber-100 text-amber-700 border border-amber-200"
-                      : "bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200"
-                  )}
-                >
-                  Overlapping Jobs ({filterStats.overlappingJobs})
-                </button>
-                
-                <button
-                  onClick={() => toggleFilter('overbookedWorkersOnly')}
-                  className={cn(
-                    "flex items-center px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-                    activeFilters.overbookedWorkersOnly
-                      ? "bg-blue-100 text-blue-700 border border-blue-200"
-                      : "bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200"
-                  )}
-                >
-                  Overbooked Workers ({filterStats.overbookedWorkers})
-                </button>
+                {/* Reset Filters - Mobile Friendly */}
+                {Object.values(activeFilters).some(Boolean) && (
+                  <button
+                    onClick={() => setActiveFilters({
+                      availableWorkersOnly: false,
+                      urgentJobsOnly: false,
+                      todaysScheduleOnly: false,
+                      overlappingJobsOnly: false,
+                      jobsWithNotesOnly: false,
+                      overbookedWorkersOnly: false,
+                    })}
+                    className="px-2 py-1 bg-white border border-gray-300 rounded text-xs font-medium text-gray-700 hover:bg-gray-100 transition-colors flex-shrink-0"
+                  >
+                    Reset
+                  </button>
+                )}
               </div>
               
-              {/* Reset Filters */}
-              {Object.values(activeFilters).some(Boolean) && (
-                <button
-                  onClick={() => setActiveFilters({
-                    availableWorkersOnly: false,
-                    urgentJobsOnly: false,
-                    todaysScheduleOnly: false,
-                    overlappingJobsOnly: false,
-                    jobsWithNotesOnly: false,
-                    overbookedWorkersOnly: false,
-                  })}
-                  className="px-3 py-1.5 bg-white border border-gray-300 rounded-md text-xs font-medium text-gray-700 hover:bg-gray-100 transition-colors flex items-center gap-1"
-                >
-                  Reset Filters
-                </button>
-              )}
+              {/* Filter Buttons - Mobile Scroll */}
+              <div className="mobile-scroll-x -mx-2 px-2 sm:mx-0 sm:px-0">
+                <div className="flex gap-1.5 min-w-max pb-1">
+                  <button
+                    onClick={() => toggleFilter('availableWorkersOnly')}
+                    className={cn(
+                      "flex items-center px-2 py-1 rounded text-xs font-medium transition-colors flex-shrink-0 whitespace-nowrap",
+                      activeFilters.availableWorkersOnly
+                        ? "bg-green-100 text-green-700 border border-green-200"
+                        : "bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200"
+                    )}
+                  >
+                    Available ({filterStats.availableWorkers})
+                  </button>
+                  
+                  <button
+                    onClick={() => toggleFilter('urgentJobsOnly')}
+                    className={cn(
+                      "flex items-center px-2 py-1 rounded text-xs font-medium transition-colors flex-shrink-0 whitespace-nowrap",
+                      activeFilters.urgentJobsOnly
+                        ? "bg-red-100 text-red-700 border border-red-200"
+                        : "bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200"
+                    )}
+                  >
+                    Urgent ({filterStats.urgentJobs})
+                  </button>
+                  
+                  <button
+                    onClick={() => toggleFilter('overlappingJobsOnly')}
+                    className={cn(
+                      "flex items-center px-2 py-1 rounded text-xs font-medium transition-colors flex-shrink-0 whitespace-nowrap",
+                      activeFilters.overlappingJobsOnly
+                        ? "bg-amber-100 text-amber-700 border border-amber-200"
+                        : "bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200"
+                    )}
+                  >
+                    Conflicts ({filterStats.overlappingJobs})
+                  </button>
+                  
+                  <button
+                    onClick={() => toggleFilter('overbookedWorkersOnly')}
+                    className={cn(
+                      "flex items-center px-2 py-1 rounded text-xs font-medium transition-colors flex-shrink-0 whitespace-nowrap",
+                      activeFilters.overbookedWorkersOnly
+                        ? "bg-blue-100 text-blue-700 border border-blue-200"
+                        : "bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200"
+                    )}
+                  >
+                    Overbooked ({filterStats.overbookedWorkers})
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Synchronized CSS Grid Timeline */}
-        <div className="flex-1 overflow-auto">
-          <div
-            className="relative"
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '280px 1fr',
-              gridTemplateRows: `60px repeat(${filteredWorkers.length}, 180px)`,
-              minWidth: `${timeSlots.length * 120 + 280}px`
-            }}
-          >
-            {/* Header Left: Worker Column Title */}
-            <div className="sticky top-0 z-20 bg-gradient-to-r from-gray-50 to-gray-100 border-r border-b border-gray-200 p-3 flex items-center justify-center shadow-sm">
-              <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                <Clock className="h-4 w-4" />
-                Team Schedule
-              </div>
-            </div>
-
-            {/* Header Right: Time Axis */}
-            <div className="sticky top-0 z-20 bg-white border-b border-gray-200 grid shadow-sm"
-                 style={{ gridTemplateColumns: `repeat(${timeSlots.length}, 1fr)` }}>
-              {timeSlots.map((hour, index) => (
-                <div key={hour} className="border-r border-gray-100 last:border-r-0 p-2 text-center relative">
-                  <div className="text-sm font-bold text-gray-800">
-                    {format(new Date().setHours(hour, 0), 'h a')}
-                  </div>
-                  {/* Business hours highlighting */}
-                  {hour >= 9 && hour < 17 && (
-                    <div className="absolute inset-0 bg-blue-50/40 border-l border-blue-100/50 -z-10" />
-                  )}
-                  {/* Hour background shading */}
-                  <div className={cn(
-                    "absolute inset-0 -z-20",
-                    index % 2 === 0 ? "bg-gray-50/50" : "bg-white"
-                  )} />
-                </div>
-              ))}
-              
-              {/* Current Time Indicator in Header */}
-              {(() => {
-                const position = getCurrentTimePosition();
-                if (position !== null) {
-                  return (
-                    <div 
-                      className="absolute top-0 bottom-0 w-[2px] bg-red-500 z-30 pointer-events-none shadow-md"
-                      style={{ left: `${position}%` }}
-                    >
-                      <div className="absolute -top-0.5 -translate-x-1/2 z-20">
-                        <div className="bg-red-600 text-white text-xs px-2 py-0.5 rounded shadow-lg flex items-center gap-1 whitespace-nowrap mb-1 font-medium">
-                          <span>NOW</span>
-                          <span className="font-mono">— {format(now, 'h:mm a')}</span>
-                        </div>
+        {/* Fully Responsive Timeline Container */}
+        <div className="flex-1 overflow-hidden max-w-full">
+          <div className="h-full flex flex-col max-w-full">
+            {/* Desktop: Timeline Grid with Horizontal Scroll */}
+            <div className="hidden lg:flex flex-1 overflow-hidden max-w-full">
+              <div className="flex h-full timeline-container no-overscroll max-w-full">
+                {/* Left: Sticky Worker Column */}
+                <div className="sticky left-0 z-20 bg-white border-r border-gray-200 shadow-lg flex-shrink-0">
+                  <div className="timeline-worker-column flex flex-col h-full timeline-responsive">
+                    {/* Worker Column Header */}
+                    <div className="bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200 p-3 flex items-center justify-center shadow-sm h-[60px]">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                        <Clock className="h-4 w-4" />
+                        <span className="hidden sm:inline">Team Schedule</span>
+                        <span className="sm:hidden">Team</span>
                       </div>
                     </div>
-                  );
-                }
-                return null;
-              })()}
-            </div>
 
-            {/* Worker Column */}
-            <div className="sticky left-0 z-10" style={{gridRow: `span ${filteredWorkers.length}`}}>
-              {filteredWorkers.map((worker, index) => (
-                <motion.div
-                  key={worker.id}
-                  className={cn(
-                    "border-r border-b border-gray-200/80 p-4 flex items-center h-[180px] transition-all duration-300 group",
-                    index % 2 === 0 ? "bg-gradient-to-r from-gray-50/50 via-gray-50/30 to-white" : "bg-white"
-                  )}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: index * 0.1 }}
-                >
-                  <div className="flex flex-col w-full">
-                    {/* Worker Header */}
-                    <div className="flex items-center mb-3">
-                      <div className="relative mr-3">
-                        <Avatar className="h-12 w-12 border-2 border-white shadow-sm">
-                          <AvatarImage src={worker.avatar} alt={worker.name} />
-                          <AvatarFallback className="text-sm font-semibold bg-blue-500 text-white">
-                            {worker.name.split(' ').map(n => n[0]).join('')}
-                          </AvatarFallback>
-                        </Avatar>
-                        
-                        {/* Status Indicator */}
-                        <div className={cn(
-                          'absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white flex items-center justify-center',
-                          workerStatusColors[worker.status].dot
-                        )} />
-                      </div>
-
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-sm text-gray-900 truncate">
-                          {worker.name}
-                        </h3>
-                        <div className="text-xs text-gray-500">{worker.role}</div>
-                      </div>
-                      
-                      {/* Context Menu */}
-                      <div className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 p-0 rounded-full hover:bg-blue-50"
+                    {/* Worker List - Scrollable */}
+                    <div className="flex-1 overflow-y-auto touch-scroll">
+                      {filteredWorkers.map((worker, index) => (
+                        <motion.div
+                          key={worker.id}
+                          className={cn(
+                            "border-b border-gray-200/80 p-3 sm:p-4 flex items-center h-[180px] transition-all duration-300 group",
+                            index % 2 === 0 ? "bg-gradient-to-r from-gray-50/50 via-gray-50/30 to-white" : "bg-white"
+                          )}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.3, delay: index * 0.1 }}
                         >
-                          <MoreHorizontal className="h-3.5 w-3.5 text-gray-500" />
-                        </Button>
-                      </div>
+                          <div className="flex flex-col w-full">
+                            {/* Worker Header */}
+                            <div className="flex items-center mb-3">
+                              <div className="relative mr-3">
+                                <Avatar className="h-10 w-10 sm:h-12 sm:w-12 border-2 border-white shadow-sm">
+                                  <AvatarImage src={worker.avatar} alt={worker.name} />
+                                  <AvatarFallback className="text-sm font-semibold bg-blue-500 text-white">
+                                    {worker.name.split(' ').map(n => n[0]).join('')}
+                                  </AvatarFallback>
+                                </Avatar>
+                                
+                                {/* Status Indicator */}
+                                <div className={cn(
+                                  'absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white',
+                                  worker.status === 'available' ? 'bg-green-500' : 'bg-gray-400'
+                                )} />
+                              </div>
+                              <div>
+                                <div className="font-semibold truncate-text">{worker.name}</div>
+                                <div className="text-xs text-gray-500 truncate-text">{worker.role}</div>
+                              </div>
+                            </div>
+                            
+                            {/* Utilization Bar */}
+                            <div className="flex items-center justify-between mt-2">
+                              <div className="text-xs text-gray-500">
+                                {(workerJobs[worker.id] || []).length} jobs this week
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <div className={cn(
+                                  'w-16 h-2 rounded-full border',
+                                  getUtilizationBg(worker.utilization)
+                                )}>
+                                  <div 
+                                    className={cn(
+                                      'h-full rounded-full transition-all',
+                                      getUtilizationColor(worker.utilization)
+                                    )}
+                                    style={{ width: `${Math.min(worker.utilization, 100)}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs font-medium">
+                                  {Math.round(worker.utilization)}%
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      ))}
                     </div>
-                    
-                    {/* Working Hours */}
-                    <div className="flex items-center gap-2 mb-2 text-xs">
-                      <Clock className="h-3.5 w-3.5 text-blue-500" />
-                      <span className="text-gray-700">{getWorkingHours(worker)}</span>
-                    </div>
-                    
-                    {/* Job Count */}
-                    <div className="flex items-center gap-2 mb-3 text-xs">
-                      <BriefcaseBusiness className="h-3.5 w-3.5 text-gray-500" />
-                      <span className="text-gray-700">{worker.jobCount} job{worker.jobCount !== 1 ? 's' : ''} today</span>
+                  </div>
+                </div>
+
+                {/* Right: Horizontally Scrollable Timeline with Fixed Width Columns */}
+                <div className="flex-1 overflow-x-auto overflow-y-hidden timeline-scroll timeline-mobile">
+                  <div className="flex flex-col h-full timeline-no-select" style={{ minWidth: `${timeSlots.length * 100}px` }}>
+                    {/* Time Header - Fixed Width Columns */}
+                    <div className="bg-white border-b border-gray-200 shadow-sm h-[60px] flex flex-shrink-0">
+                      {timeSlots.map((hour, index) => (
+                        <div 
+                          key={hour} 
+                          className="timeline-hour-column border-r border-gray-100 last:border-r-0 p-2 text-center relative bg-white"
+                        >
+                          <div className="text-sm font-bold text-gray-800">
+                            {format(new Date().setHours(hour, 0), 'h a')}
+                          </div>
+                          {/* Business hours highlighting */}
+                          {hour >= 9 && hour < 17 && (
+                            <div className="absolute inset-0 bg-blue-50/40 border-l border-blue-100/50 -z-10" />
+                          )}
+                          {/* Hour background shading */}
+                          <div className={cn(
+                            "absolute inset-0 -z-20",
+                            index % 2 === 0 ? "bg-gray-50/50" : "bg-white"
+                          )} />
+                        </div>
+                      ))}
+                      
+                      {/* Current Time Indicator in Header */}
+                      {(() => {
+                        const position = getCurrentTimePosition();
+                        if (position !== null) {
+                          const leftPx = (position / 100) * timeSlots.length * 100;
+                          return (
+                            <div 
+                              className="absolute top-0 bottom-0 w-[2px] bg-red-500 z-30 pointer-events-none shadow-md"
+                              style={{ left: `${leftPx}px` }}
+                            >
+                              <div className="absolute -top-0.5 -translate-x-1/2 z-20">
+                                <div className="bg-red-600 text-white text-xs px-2 py-0.5 rounded shadow-lg flex items-center gap-1 whitespace-nowrap mb-1 font-medium">
+                                  <span>NOW</span>
+                                  <span className="font-mono hidden sm:inline">— {format(now, 'h:mm a')}</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
 
-                    {/* Status & Utilization */}
-                    <div className="flex items-center justify-between">
-                      <div className={cn(
-                        'px-2 py-1 rounded-full text-xs font-medium',
-                        workerStatusColors[worker.status].bg,
-                        workerStatusColors[worker.status].text
-                      )}>
-                        {getWorkerStatusMessage(worker)}
-                      </div>
-                      
-                      {/* Utilization Bar */}
-                      <div className="flex items-center gap-2">
-                        <div className={cn(
-                          'w-16 h-2.5 rounded-full border',
-                          getUtilizationBg(worker.utilization)
-                        )}>
-                          <div 
-                            className={cn(
-                              'h-full rounded-full transition-all',
-                              getUtilizationColor(worker.utilization)
-                            )}
-                            style={{ width: `${Math.min(worker.utilization, 100)}%` }}
-                          />
+                    {/* Timeline Content - Worker Rows with Jobs */}
+                    <div className="flex-1 overflow-y-auto relative">
+                      <div className="relative" style={{ minHeight: `${filteredWorkers.length * 180}px` }}>
+                        {/* Vertical Grid Lines - Fixed Width */}
+                        <div className="absolute inset-0 flex">
+                          {timeSlots.map(hour => (
+                            <div 
+                              key={hour} 
+                              className="timeline-hour-column border-r border-gray-100 last:border-r-0 h-full"
+                            />
+                          ))}
                         </div>
-                        <span className="text-xs font-medium text-gray-600">
-                          {Math.round(worker.utilization)}%
-                        </span>
+
+                        {/* Worker Rows with Jobs */}
+                        {filteredWorkers.map((worker, workerIndex) => {
+                          const jobsForWorker = workerJobs[worker.id] || [];
+                          return (
+                            <div 
+                              key={worker.id}
+                              className="absolute w-full border-b border-gray-200/60 overflow-visible"
+                              style={{ 
+                                top: `${workerIndex * 180}px`,
+                                height: '180px'
+                              }}
+                            >
+                              {/* Worker Availability Background */}
+                              {worker.working_hours?.map((shift, shiftIndex) => {
+                                const [startHour, startMin] = shift.start.split(':').map(Number);
+                                const [endHour, endMin] = shift.end.split(':').map(Number);
+                                
+                                const leftPercent = calculateTimePosition(startHour, startMin, START_HOUR, END_HOUR);
+                                const widthPercent = calculateTimeWidth((endHour + endMin/60) - (startHour + startMin/60), START_HOUR, END_HOUR);
+                                
+                                const leftPx = (leftPercent / 100) * timeSlots.length * 100;
+                                const widthPx = (widthPercent / 100) * timeSlots.length * 100;
+
+                                return (
+                                  <div 
+                                    key={shiftIndex} 
+                                    className="absolute top-0 bottom-0 bg-green-500/8 border-l border-green-200/50"
+                                    style={{ 
+                                      left: `${leftPx}px`, 
+                                      width: `${widthPx}px`
+                                    }} 
+                                  />
+                                )
+                              })}
+
+                              {/* Jobs with Start and End Times Clearly Shown */}
+                              {jobsForWorker.map((job, jobIndex) => {
+                                const jobStart = parseISO(job.scheduled_at)
+                                const jobHour = jobStart.getHours()
+                                const jobMinute = jobStart.getMinutes()
+                                
+                                const leftPercent = calculateTimePosition(jobHour, jobMinute, START_HOUR, END_HOUR)
+                                const widthPercent = calculateTimeWidth(job.duration_hours, START_HOUR, END_HOUR)
+                                
+                                if (leftPercent < 0 || leftPercent > 95) return null;
+
+                                const hasConflict = overlappingJobs.has(job.id);
+
+                                if (activeFilters.overlappingJobsOnly && !hasConflict) {
+                                  return null;
+                                }
+
+                                const leftPx = (leftPercent / 100) * timeSlots.length * 100;
+                                const widthPx = Math.max(80, (widthPercent / 100) * timeSlots.length * 100);
+
+                                // Calculate stacking offset for overlapping jobs
+                                const overlappingPrevJobs = jobsForWorker
+                                  .filter((otherJob, otherIndex) => {
+                                    if (otherIndex >= jobIndex) return false
+                                    const otherStart = parseISO(otherJob.scheduled_at)
+                                    const otherEnd = addHours(otherStart, otherJob.duration_hours)
+                                    const jobEnd = addHours(jobStart, job.duration_hours)
+                                    return (jobStart < otherEnd && jobEnd > otherStart)
+                                  })
+                                
+                                const verticalOffset = overlappingPrevJobs.length * 50
+
+                                return (
+                                  <motion.div
+                                    key={job.id}
+                                    className={cn(
+                                      'absolute z-20 cursor-pointer transition-all duration-200',
+                                      'rounded-lg border-l-4 border border-gray-200 shadow hover:shadow-md',
+                                      'p-2 sm:p-3 min-h-[80px] bg-white/95 backdrop-blur-sm',
+                                      statusColors[job.status as keyof typeof statusColors]?.bg,
+                                      statusColors[job.status as keyof typeof statusColors]?.border,
+                                      hasConflict && 'ring-2 ring-red-400 ring-offset-1'
+                                    )}
+                                    style={{ 
+                                      left: `${leftPx}px`, 
+                                      width: `${widthPx}px`,
+                                      top: `${12 + verticalOffset}px`,
+                                      maxHeight: `${180 - 24}px`
+                                    }}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      setSelectedJob(job);
+                                      setShowJobDetails(true);
+                                    }}
+                                    onTouchStart={(e) => {
+                                      // Prevent scrolling while interacting with job cards
+                                      e.stopPropagation();
+                                    }}
+                                    initial={{ opacity: 0, scale: 0.95 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    whileHover={{ scale: 1.02, y: -2 }}
+                                    whileTap={{ scale: 0.98 }}
+                                  >
+                                    {/* Job Header */}
+                                    <div className="flex items-center justify-between mb-2">
+                                      <div className="flex items-center gap-1 sm:gap-2">
+                                        <div className={cn(
+                                          'w-2 h-2 rounded-full',
+                                          statusColors[job.status as keyof typeof statusColors]?.dot
+                                        )} />
+                                        <span className={cn(
+                                          'text-xs px-1.5 sm:px-2 py-0.5 rounded-full font-medium',
+                                          statusColors[job.status as keyof typeof statusColors]?.text,
+                                          'bg-white/80'
+                                        )}>
+                                          {job.status.replace('_', ' ')}
+                                        </span>
+                                        
+                                        {job.priority === 'urgent' && (
+                                          <span className="bg-red-100 text-red-600 text-xs font-medium px-1.5 py-0.5 rounded-sm">
+                                            Urgent
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Job Content with Clear Start/End Times */}
+                                    <div className="space-y-1 sm:space-y-2">
+                                      <h4 className="font-semibold text-xs sm:text-sm text-gray-900 line-clamp-2 leading-tight">
+                                        {job.title}
+                                      </h4>
+
+                                      <div className="flex items-center gap-1 text-xs">
+                                        <Clock className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-blue-600" />
+                                        <span className="font-medium text-blue-700">
+                                          {format(jobStart, 'h:mm a')}
+                                        </span>
+                                        <ChevronRight className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-gray-400" />
+                                        <span className="font-medium text-blue-700">
+                                          {format(addHours(jobStart, job.duration_hours), 'h:mm a')}
+                                        </span>
+                                      </div>
+
+                                      <div className="flex items-center gap-1 text-xs text-gray-600">
+                                        <User className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-indigo-500" />
+                                        <span className="truncate font-medium">{job.client_name}</span>
+                                      </div>
+                                      
+                                      {job.location && (
+                                        <div className="flex items-center gap-1 text-xs text-gray-500">
+                                          <MapPin className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
+                                          <span className="truncate">{job.location.split(',')[0]}</span>
+                                        </div>
+                                      )}
+                                      
+                                      {hasConflict && (
+                                        <div className="flex items-center gap-1 text-xs text-red-600 mt-1 bg-red-50 px-1.5 py-1 rounded">
+                                          <AlertTriangle className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
+                                          <span>Scheduling conflict</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </motion.div>
+                                )
+                              })}
+                            </div>
+                          )
+                        })}
+
+                        {/* Current Time Indicator Line */}
+                        {(() => {
+                          const position = getCurrentTimePosition();
+                          if (position !== null) {
+                            const leftPx = (position / 100) * timeSlots.length * 100;
+                            return (
+                              <div 
+                                className="absolute top-0 bottom-0 w-[2px] bg-red-500 z-30 pointer-events-none shadow-md"
+                                style={{ left: `${leftPx}px` }}
+                              >
+                                <div className="absolute inset-0 bg-gradient-to-b from-red-500 to-red-400/70" />
+                              </div>
+                            );
+                          }
+                        return null;
+                        })()}
                       </div>
                     </div>
                   </div>
-                </motion.div>
-              ))}
+                </div>
+              </div>
             </div>
 
-            {/* Timeline Grid Content */}
-            <div className="relative col-start-2" style={{gridRow: `span ${filteredWorkers.length}`}}>
-              {/* Vertical Grid Lines */}
-              <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${timeSlots.length}, 1fr)`}}>
-                {timeSlots.map(hour => (
-                  <div key={hour} className="border-r border-gray-100 last:border-r-0"></div>
-                ))}
-              </div>
-
-              {/* Worker Rows + Jobs */}
-              <div className="relative" style={{ display: 'grid', gridTemplateRows: `repeat(${filteredWorkers.length}, 180px)`}}>
-                {filteredWorkers.map((worker) => {
-                  const jobsForWorker = workerJobs[worker.id] || [];
-                  return (
-                    <div key={worker.id} className="border-b border-gray-200/60 relative overflow-visible">
-                      {/* Worker Availability Background */}
-                      {worker.working_hours?.map((shift, shiftIndex) => {
-                        const [startHour, startMin] = shift.start.split(':').map(Number);
-                        const [endHour, endMin] = shift.end.split(':').map(Number);
-                        
-                        const left = calculateTimePosition(startHour, startMin, START_HOUR, END_HOUR);
-                        const width = calculateTimeWidth((endHour + endMin/60) - (startHour + startMin/60), START_HOUR, END_HOUR);
-
-                        return (
-                          <div 
-                            key={shiftIndex} 
-                            className="absolute top-0 bottom-0 bg-green-500/8 border-l border-green-200/50"
-                            style={{ left: `${left}%`, width: `${width}%`}} 
-                          />
-                        )
-                      })}
-
-                      {/* Jobs with proper stacking */}
-                      {jobsForWorker.map((job, jobIndex) => {
-                        const jobStart = parseISO(job.scheduled_at)
-                        const jobHour = jobStart.getHours()
-                        const jobMinute = jobStart.getMinutes()
-                        
-                        const left = calculateTimePosition(jobHour, jobMinute, START_HOUR, END_HOUR)
-                        const width = calculateTimeWidth(job.duration_hours, START_HOUR, END_HOUR)
-                        
-                        if (left < 0 || left > 95) return null;
-
-                        const hasConflict = overlappingJobs.has(job.id);
-                        
-                        // Skip if filtered out by overlapping jobs filter
-                        if (activeFilters.overlappingJobsOnly && !hasConflict) {
-                          return null;
-                        }
-
-                        // Calculate stacking offset for overlapping jobs
-                        const overlappingPrevJobs = jobsForWorker
-                          .filter((otherJob, otherIndex) => {
-                            if (otherIndex >= jobIndex) return false
-                            const otherStart = parseISO(otherJob.scheduled_at)
-                            const otherEnd = addHours(otherStart, otherJob.duration_hours)
-                            const jobEnd = addHours(jobStart, job.duration_hours)
-                            return (jobStart < otherEnd && jobEnd > otherStart)
-                          })
-                        
-                        const verticalOffset = overlappingPrevJobs.length * 50
-
-                        return (
-                          <motion.div
-                            key={job.id}
-                            className={cn(
-                              'absolute z-20 cursor-pointer transition-all duration-200',
-                              'rounded-lg border-l-4 border border-gray-200 shadow hover:shadow-md',
-                              'p-3 min-h-[90px] bg-white/95 backdrop-blur-sm',
-                              statusColors[job.status as keyof typeof statusColors]?.bg,
-                              statusColors[job.status as keyof typeof statusColors]?.border,
-                              hasConflict && 'ring-2 ring-red-400 ring-offset-1'
-                            )}
-                            style={{ 
-                              left: `${left}%`, 
-                              width: `${width}%`,
-                              top: `${12 + verticalOffset}px`,
-                              maxHeight: `${180 - 24}px`
-                            }}
-                            onClick={() => {
-                              setSelectedJob(job);
-                              setShowJobDetails(true);
-                            }}
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            whileHover={{ scale: 1.02, y: -2 }}
-                            whileTap={{ scale: 0.98 }}
-                          >
-                            {/* Job Header */}
-                            <div className="flex items-center justify-between mb-2">
-                              <div className="flex items-center gap-2">
-                                <div className={cn(
-                                  'w-2 h-2 rounded-full',
-                                  statusColors[job.status as keyof typeof statusColors]?.dot
-                                )} />
-                                <span className={cn(
-                                  'text-xs px-2 py-0.5 rounded-full font-medium',
-                                  statusColors[job.status as keyof typeof statusColors]?.text,
-                                  'bg-white/80'
-                                )}>
-                                  {job.status.replace('_', ' ')}
-                                </span>
-                                
-                                {job.priority === 'urgent' && (
-                                  <span className="bg-red-100 text-red-600 text-xs font-medium px-1.5 py-0.5 rounded-sm">
-                                    Urgent
-                                  </span>
-                                )}
+            {/* Mobile/Tablet: Stacked Cards Layout */}
+            <div className="flex lg:hidden flex-col flex-1 overflow-hidden max-w-full">
+              <div className="flex-1 overflow-y-auto touch-scroll p-2 sm:p-4 space-y-3 sm:space-y-4 max-w-full">
+                {filteredWorkers.map((worker, index) => (
+                  <motion.div
+                    key={worker.id}
+                    className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden max-w-full"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, delay: index * 0.1 }}
+                  >
+                    {/* Mobile Worker Header */}
+                    <div className={cn(
+                      "p-3 border-b border-gray-200",
+                      worker.status === 'available' ? 'bg-gradient-to-r from-green-50 to-blue-50' : 'bg-gradient-to-r from-gray-50 to-white'
+                    )}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center">
+                          <div className="relative mr-3">
+                            <Avatar className="h-12 w-12 border-2 border-white shadow-sm">
+                              <AvatarImage src={worker.avatar} alt={worker.name} />
+                              <AvatarFallback className="text-sm font-semibold bg-blue-500 text-white">
+                                {worker.name.split(' ').map(n => n[0]).join('')}
+                              </AvatarFallback>
+                            </Avatar>
+                            
+                            {/* Status Indicator */}
+                            <div className={cn(
+                              "absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-white",
+                              worker.status === 'available' ? 'bg-green-500' : 'bg-gray-400'
+                            )} />
+                          </div>
+                          
+                          <div>
+                            <div className="font-semibold truncate-text">{worker.name}</div>
+                            <div className="text-xs text-gray-500 truncate-text">{worker.role}</div>
+                            <div className="flex items-center mt-1">
+                              <div className={cn(
+                                "text-xs px-1.5 py-0.5 rounded-full",
+                                worker.status === 'available' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                              )}>
+                                {worker.status === 'available' ? 'Available' : 'Unavailable'}
                               </div>
                             </div>
-
-                            {/* Job Content */}
-                            <div className="space-y-2">
-                              <h4 className="font-semibold text-sm text-gray-900 line-clamp-2 leading-tight">
-                                {job.title}
-                              </h4>
-
-                              <div className="flex items-center gap-1 text-xs">
-                                <Clock className="h-3 w-3 text-blue-600" />
-                                <span className="font-medium text-blue-700">
-                                  {format(jobStart, 'h:mm a')}
-                                </span>
-                                <ChevronRight className="h-3 w-3 text-gray-400" />
-                                <span className="font-medium text-blue-700">
-                                  {format(addHours(jobStart, job.duration_hours), 'h:mm a')}
-                                </span>
-                              </div>
-
-                              <div className="flex items-center gap-1 text-xs text-gray-600">
-                                <User className="h-3 w-3 text-indigo-500" />
-                                <span className="truncate font-medium">{job.client_name}</span>
-                              </div>
-                              
-                              {job.location && (
-                                <div className="flex items-center gap-1 text-xs text-gray-500">
-                                  <MapPin className="h-3 w-3" />
-                                  <span className="truncate">{job.location.split(',')[0]}</span>
-                                </div>
-                              )}
-                              
-                              {hasConflict && (
-                                <div className="flex items-center gap-1 text-xs text-red-600 mt-1 bg-red-50 px-1.5 py-1 rounded">
-                                  <AlertTriangle className="h-3 w-3" />
-                                  <span>Scheduling conflict</span>
-                                </div>
-                              )}
-                            </div>
-                          </motion.div>
-                        )
-                      })}
-                    </div>
-                  )
-                })}
-
-                {/* Current Time Indicator Line */}
-                {(() => {
-                  const position = getCurrentTimePosition();
-                  if (position !== null) {
-                    return (
-                      <div 
-                        className="absolute top-0 bottom-0 w-[2px] bg-red-500 z-30 pointer-events-none shadow-md"
-                        style={{ left: `${position}%` }}
-                      >
-                        <div className="absolute inset-0 bg-gradient-to-b from-red-500 to-red-400/70" />
+                          </div>
+                        </div>
                       </div>
-                    );
-                  }
-                  return null;
-                })()}
+                    </div>
+                    
+                                          {/* Mobile Timeline Container */}
+                      <div className="mobile-container py-2">
+                        {String(viewMode) === 'day' ? (
+                        /* Mobile Day View - Hours */
+                        <div className="w-full overflow-x-auto timeline-scroll no-overscroll">
+                          <div className="relative w-max" style={{ paddingBottom: '8px' }}>
+                            {/* Enhanced Hour Headers */}
+                            <div className="flex gap-0.5 min-w-max">
+                              {timeSlots.map((hour, hourIndex) => (
+                                <div key={hour} className="flex-shrink-0" style={{ width: '70px' }}>
+                                  <div className={cn(
+                                    'text-xs font-medium text-center py-1 px-1 rounded',
+                                    (hour >= 9 && hour < 17) ? 'bg-blue-50 text-blue-700' : 'bg-gray-50 text-gray-600'
+                                  )}>
+                                    {hour % 12 === 0 ? '12' : hour % 12}:00 {hour >= 12 ? 'PM' : 'AM'}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            
+                            {/* Current Time Indicator */}
+                            {isSameDay(selectedDate, new Date()) && (
+                              <div 
+                                className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10" 
+                                style={{ 
+                                  left: `${getCurrentTimePosition()}px`,
+                                  height: '100%'
+                                }}
+                              />
+                            )}
+                            
+                            {/* Timeline Jobs */}
+                            <div className="relative h-16 mt-1">
+                              {workerJobs[worker.id]?.map((job, jobIndex) => {
+                                const jobDate = parseISO(job.scheduled_at);
+                                const startHour = jobDate.getHours();
+                                const startMinute = jobDate.getMinutes();
+                                
+                                // Calculate position based on hours from start of day
+                                const startHourIndex = timeSlots.findIndex(h => h === startHour);
+                                const minuteOffset = (startMinute / 60) * 70; // 70px per hour
+                                const leftPosition = (startHourIndex * 70) + minuteOffset;
+                                
+                                // Calculate width based on duration
+                                const widthHours = job.duration_hours || 1;
+                                const jobWidth = Math.max(60, widthHours * 70);
+                                
+                                return (
+                                  <div
+                                    key={job.id}
+                                    className={cn(
+                                      "absolute top-0 rounded-md py-1 px-2 cursor-pointer border-l-4 shadow-sm",
+                                      statusColors[job.status]?.border,
+                                      statusColors[job.status]?.bg,
+                                      'hover:shadow-md active:scale-95 transition-all duration-150'
+                                    )}
+                                    style={{
+                                      left: `${leftPosition}px`,
+                                      width: `${jobWidth}px`,
+                                      height: '44px'
+                                    }}
+                                    onClick={() => {
+                                      setSelectedJob(job);
+                                      setShowJobDetails(true);
+                                    }}
+                                  >
+                                    <div className="text-xs font-medium truncate-text">{job.title}</div>
+                                    <div className="text-xs truncate-text">
+                                      {format(jobDate, 'h:mm a')}
+                                      {job.duration_hours > 0 ? ` - ${format(addHours(jobDate, job.duration_hours), 'h:mm a')}` : ''}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        /* Mobile Week View - Days */
+                        <div className="w-full overflow-x-auto timeline-scroll no-overscroll">
+                          <div className="grid grid-cols-7 gap-1 min-w-max" style={{ minWidth: '490px' }}>
+                            {Array.from({ length: 7 }, (_, dayIndex) => {
+                              const day = addDays(startOfWeek(selectedDate, { weekStartsOn: 1 }), dayIndex);
+                              const dayJobs = (workerJobs[worker.id] || []).filter(job => {
+                                const jobDate = parseISO(job.scheduled_at);
+                                return isSameDay(jobDate, day);
+                              });
+
+                              return (
+                                <div key={dayIndex} className="space-y-1 w-[70px]">
+                                  <div className={cn(
+                                    'text-xs font-medium text-center py-1 px-1 rounded',
+                                    isToday(day) ? 'bg-blue-50 text-blue-700' : 'bg-gray-50 text-gray-600'
+                                  )}>
+                                    {format(day, 'EEE')}
+                                  </div>
+                                  <div className={cn(
+                                    'text-base font-bold text-center',
+                                    isToday(day) ? 'text-blue-600' : 'text-gray-900'
+                                  )}>
+                                    {format(day, 'd')}
+                                  </div>
+                                  <div className="space-y-1 min-h-[80px]">
+                                    {dayJobs.slice(0, 3).map((job, jobIndex) => (
+                                      <div
+                                        key={job.id}
+                                        className={cn(
+                                          'p-1 rounded text-xs cursor-pointer transition-all',
+                                          statusColors[job.status]?.bg,
+                                          'border-l-2 border-gray-200 hover:shadow-sm active:scale-95'
+                                        )}
+                                        style={{
+                                          borderLeftColor: job.priority === 'urgent' ? '#ef4444' : 
+                                                        job.priority === 'high' ? '#f97316' : 
+                                                        job.priority === 'medium' ? '#3b82f6' : '#6b7280'
+                                        }}
+                                        onClick={() => {
+                                          setSelectedJob(job);
+                                          setShowJobDetails(true);
+                                        }}
+                                      >
+                                        <div className="font-medium truncate-text">{job.title}</div>
+                                        <div className="text-xs text-gray-500 truncate-text">
+                                          {format(parseISO(job.scheduled_at), 'h:mm a')}
+                                        </div>
+                                      </div>
+                                    ))}
+                                    {dayJobs.length > 3 && (
+                                      <div className="text-center text-xs text-gray-500 mt-1">
+                                        +{dayJobs.length - 3} more
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                ))}
               </div>
             </div>
           </div>

@@ -125,6 +125,10 @@ export default function TeamPage() {
             <WorkerCardSkeleton key={i} />
           ))}
         </div>
+      ) : !workers ? (
+        <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded mb-6">
+          No worker data available. Please try refreshing the page.
+        </div>
       ) : workers.length === 0 ? (
         <Card className="border border-dashed border-gray-300 bg-gray-50">
           <CardContent className="p-10 text-center">
@@ -142,7 +146,7 @@ export default function TeamPage() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {workers.map(worker => (
+          {workers?.map(worker => (
             <Card key={worker.id} className="overflow-hidden hover:shadow-md transition-shadow duration-200">
               <CardContent className="p-0">
                 <div className="p-6 flex flex-col h-full">

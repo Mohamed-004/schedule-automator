@@ -113,25 +113,29 @@ export function StatsRibbon() {
 
   if (loading) {
     return (
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-5 mb-6">
-        {[1, 2, 3, 4, 5].map((i) => (
-          <div key={i} className="bg-gray-100 animate-pulse rounded-lg p-4 h-20" />
-        ))}
+      <div className="mobile-container mb-4 sm:mb-6">
+        <div className="flex flex-col space-y-2 sm:grid sm:grid-cols-2 sm:gap-3 md:grid-cols-3 lg:grid-cols-5 sm:space-y-0">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="bg-gray-100 animate-pulse rounded-lg p-2 h-16 w-full" />
+          ))}
+        </div>
       </div>
     )
   }
   
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-5 mb-6">
-      {statItems.map((stat, index) => (
-        <div key={index} className={`${stat.color} border rounded-lg p-4 text-center`}>
-          <div className="flex items-center justify-center mb-2">
-            <stat.icon className="h-5 w-5" />
+    <div className="mobile-container mb-4 sm:mb-6">
+      <div className="flex flex-col space-y-2 sm:grid sm:grid-cols-2 sm:gap-3 md:grid-cols-3 lg:grid-cols-5 sm:space-y-0">
+        {statItems.map((stat, index) => (
+          <div key={index} className={`${stat.color} border rounded-lg p-2 sm:p-3 text-center w-full`}>
+            <div className="flex items-center justify-center mb-1">
+              <stat.icon className="h-4 w-4" />
+            </div>
+            <div className="text-lg sm:text-xl md:text-2xl font-bold">{stat.value}</div>
+            <div className="text-xs sm:text-sm font-medium truncate-text">{stat.label}</div>
           </div>
-          <div className="text-2xl font-bold">{stat.value}</div>
-          <div className="text-sm font-medium">{stat.label}</div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   )
 } 

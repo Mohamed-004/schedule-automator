@@ -206,7 +206,7 @@ export default function JobForm({ onSubmit, onCancel, saving, initialData }: Job
         <select id="worker_id" name="worker_id" value={form.worker_id} onChange={handleChange} className="w-full border rounded px-2 py-2">
           <option value="">Select worker</option>
           <option value="na">N/A</option>
-          {workers.map(worker => (
+          {workers?.map(worker => (
             <option key={worker.id} value={worker.id}>{worker.name} ({worker.role})</option>
           ))}
         </select>
