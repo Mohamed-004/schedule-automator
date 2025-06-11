@@ -1,0 +1,806 @@
+'use client'
+
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
+import { format, parseISO, isSameDay, addDays, startOfDay, startOfWeek, addHours } from 'date-fns'
+import { Clock, User, ArrowLeft, ArrowRight, Filter, X, AlertTriangle, MapPin, Calendar, Check, Edit, CalendarClock } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
+import { TooltipProvider } from '@/components/ui/tooltip'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import type { Job as DBJob, Worker as DBWorker } from '@/lib/types'
+
+// Export these types so the parent page can use them directly
+export interface TimelineJob extends DBJob {
+  duration_hours: number;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  color?: string;
+}
+
+export interface TimelineWorker {
+  id: string;
+  business_id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: 'technician' | 'dispatcher' | 'manager';
+  created_at: string;
+  updated_at: string;
+  avatar_url?: string | null;
+  working_hours?: any;
+  utilization?: number;
+  jobCount?: number;
+  skills?: string[];
+  status: 'available' | 'busy' | 'offline';
+  isOverbooked?: boolean;
+  totalHours?: number;
+}
+
+interface FilterState {
+  search: string
+  status: string
+  priority: string
+  worker: string
+}
+
+interface TimelineSchedulerV2Props {
+  jobs: TimelineJob[]
+  workers: TimelineWorker[]
+  selectedDate: Date
+  viewMode?: 'day' | 'week'
+  onDateChange: (date: Date) => void
+  onViewModeChange?: (mode: 'day' | 'week') => void
+  onJobUpdate?: (jobId: string, updates: Partial<TimelineJob>) => void
+  onJobMove?: (jobId: string, newWorkerId: string | null, newTime: Date) => void
+}
+
+const ROW_HEIGHT = 80; // height for each worker row
+const HOUR_WIDTH = 100; // width per hour
+
+export function TimelineSchedulerV2({
+  jobs,
+  workers,
+  selectedDate,
+  viewMode = 'day',
+  onDateChange,
+  onViewModeChange,
+  onJobUpdate,
+  onJobMove,
+}: TimelineSchedulerV2Props) {
+  const [selectedJob, setSelectedJob] = useState<TimelineJob | null>(null)
+  const [showJobDetails, setShowJobDetails] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
+  const timelineBodyRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const workerListRef = useRef<HTMLDivElement>(null);
+
+  // Filter state
+  const [filters, setFilters] = useState<FilterState>({
+    search: '',
+    status: 'all',
+    priority: 'all',
+    worker: 'all'
+  })
+  
+  const [activeFilters, setActiveFilters] = useState<{
+    availableWorkersOnly: boolean;
+    urgentJobsOnly: boolean;
+    todaysScheduleOnly: boolean;
+    overlappingJobsOnly: boolean;
+    jobsWithNotesOnly: boolean;
+    overbookedWorkersOnly: boolean;
+  }>({
+    availableWorkersOnly: false,
+    urgentJobsOnly: false,
+    todaysScheduleOnly: false,
+    overlappingJobsOnly: false,
+    jobsWithNotesOnly: false,
+    overbookedWorkersOnly: false
+  });
+
+  // Calculate week days for week view
+  const weekDays = useMemo(() => {
+    const startOfWeekDate = startOfWeek(selectedDate, { weekStartsOn: 0 });
+    return Array.from({ length: 7 }, (_, i) => addDays(startOfWeekDate, i));
+  }, [selectedDate]);
+
+  // Job filtering logic
+  const filteredJobs = useMemo(() => {
+    return jobs.filter(job => {
+      // Search filter
+      if (filters.search && !job.title.toLowerCase().includes(filters.search.toLowerCase()) &&
+          !job.client_name.toLowerCase().includes(filters.search.toLowerCase())) {
+        return false;
+      }
+      
+      // Status filter
+      if (filters.status !== 'all' && job.status !== filters.status) {
+        return false;
+      }
+      
+      // Priority filter
+      if (filters.priority !== 'all' && job.priority !== filters.priority) {
+        return false;
+      }
+      
+      // Worker filter
+      if (filters.worker !== 'all' && job.worker_id !== filters.worker) {
+        return false;
+      }
+
+      // Active filters
+      if (activeFilters.urgentJobsOnly && job.priority !== 'urgent') {
+        return false;
+      }
+
+      if (activeFilters.todaysScheduleOnly) {
+        const jobDate = new Date(job.scheduled_at);
+        if (!isSameDay(jobDate, selectedDate)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [jobs, filters, activeFilters, selectedDate]);
+
+  // Filter jobs based on the selected date for day view
+  const filteredJobsForSelectedDate = useMemo(() => {
+    if (viewMode === 'day') {
+      return jobs.filter(job => {
+        const jobDate = parseISO(job.scheduled_at);
+        return isSameDay(jobDate, selectedDate);
+      });
+    }
+    return jobs;
+  }, [jobs, selectedDate, viewMode]);
+
+  // Group jobs by worker
+  const workerJobs = useMemo(() => {
+    const grouped: Record<string, TimelineJob[]> = {};
+    
+    const jobsToGroup = viewMode === 'day' ? filteredJobsForSelectedDate : filteredJobs;
+    
+    jobsToGroup.forEach(job => {
+      if (job.worker_id) {
+        if (!grouped[job.worker_id]) {
+          grouped[job.worker_id] = [];
+        }
+        grouped[job.worker_id].push(job);
+      }
+    });
+    
+    return grouped;
+  }, [filteredJobsForSelectedDate, filteredJobs, viewMode]);
+
+  // Find overlapping jobs
+  const overlappingJobs = useMemo(() => {
+    const overlaps = new Set<string>();
+    
+    Object.values(workerJobs).forEach(jobs => {
+      for (let i = 0; i < jobs.length; i++) {
+        const job1 = jobs[i];
+        const job1Start = parseISO(job1.scheduled_at);
+        const job1End = addHours(job1Start, job1.duration_hours);
+        
+        for (let j = i + 1; j < jobs.length; j++) {
+          const job2 = jobs[j];
+          const job2Start = parseISO(job2.scheduled_at);
+          const job2End = addHours(job2Start, job2.duration_hours);
+          
+          if (job1Start < job2End && job1End > job2Start) {
+            overlaps.add(job1.id);
+            overlaps.add(job2.id);
+          }
+        }
+      }
+    });
+    
+    return overlaps;
+  }, [workerJobs]);
+
+  // Dynamically determine work hours
+  const timeRange = useMemo(() => {
+    let earliestStart = 8;
+    let latestEnd = 18;
+    
+    workers.forEach(worker => {
+      if (worker.working_hours && worker.working_hours.length > 0) {
+        worker.working_hours.forEach((hours: any) => {
+          const [startHour, startMinute] = hours.start.split(':').map(Number);
+          const [endHour, endMinute] = hours.end.split(':').map(Number);
+          
+          const startTime = startHour + startMinute / 60;
+          const endTime = endHour + endMinute / 60;
+          
+          if (startTime < earliestStart) earliestStart = startTime;
+          if (endTime > latestEnd) latestEnd = endTime;
+        });
+      }
+    });
+    
+    const relevantJobs = viewMode === 'day' ? filteredJobsForSelectedDate : filteredJobs;
+    relevantJobs.forEach(job => {
+      const jobStartTime = parseISO(job.scheduled_at);
+      const jobStartHour = jobStartTime.getHours() + jobStartTime.getMinutes() / 60;
+      const jobEndHour = jobStartHour + job.duration_hours;
+      
+      if (jobStartHour < earliestStart) earliestStart = jobStartHour;
+      if (jobEndHour > latestEnd) latestEnd = jobEndHour;
+    });
+    
+    const bufferHours = 1;
+    earliestStart = Math.max(5, Math.floor(earliestStart) - bufferHours);
+    latestEnd = Math.min(22, Math.ceil(latestEnd) + bufferHours);
+    
+    if (latestEnd - earliestStart < 8) {
+      const center = (earliestStart + latestEnd) / 2;
+      earliestStart = Math.max(5, Math.floor(center - 4));
+      latestEnd = Math.min(22, Math.ceil(center + 4));
+    }
+    
+    return { START_HOUR: earliestStart, END_HOUR: latestEnd };
+  }, [workers, filteredJobsForSelectedDate, filteredJobs, viewMode]);
+
+  const totalHours = timeRange.END_HOUR - timeRange.START_HOUR;
+
+  const timeSlots = useMemo(() => {
+    return Array.from({ length: totalHours + 1 }, (_, i) => timeRange.START_HOUR + i)
+  }, [totalHours, timeRange.START_HOUR])
+
+  // Calculate worker utilization
+  const workersWithUtilization = useMemo(() => {
+    return workers.map(worker => {
+      const workerJobsForDay = (workerJobs[worker.id] || []).filter(job => {
+        const jobDate = parseISO(job.scheduled_at);
+        const isNotCancelled = job.status !== 'cancelled';
+        const isInCurrentView = viewMode === 'day' 
+          ? isSameDay(jobDate, selectedDate) 
+          : true;
+        
+        return isNotCancelled && isInCurrentView;
+      });
+      
+      const uniqueJobIds = new Set();
+      const uniqueJobs = workerJobsForDay.filter(job => {
+        if (uniqueJobIds.has(job.id)) {
+          return false;
+        }
+        uniqueJobIds.add(job.id);
+        return true;
+      });
+      
+      const totalHours = uniqueJobs.reduce((sum, job) => sum + job.duration_hours, 0);
+      const weeklyAvailableHours = 40;
+      
+      const dailyUtilizationPercent = Math.min(((totalHours / 8) * 100), 100);
+      const weeklyUtilizationPercent = Math.min(((totalHours / weeklyAvailableHours) * 100), 100);
+      
+      let utilization = viewMode === 'day' 
+        ? parseFloat(dailyUtilizationPercent.toFixed(1)) 
+        : parseFloat(weeklyUtilizationPercent.toFixed(1));
+      
+      if (isNaN(utilization) || utilization < 0) {
+        utilization = 0;
+      }
+      
+      return {
+        ...worker,
+        utilization,
+        totalHours,
+        jobCount: uniqueJobs.length,
+        isOverbooked: viewMode === 'day' ? totalHours > 8 : totalHours > weeklyAvailableHours
+      }
+    })
+  }, [workers, workerJobs, viewMode, selectedDate]);
+
+  // Filter workers based on active filters
+  const filteredWorkers = useMemo(() => {
+    return workersWithUtilization.filter(worker => {
+      if (filters.search && !worker.name.toLowerCase().includes(filters.search.toLowerCase())) {
+        return false;
+      }
+      
+      if (activeFilters.availableWorkersOnly && worker.status !== 'available') {
+        return false;
+      }
+      
+      if (activeFilters.overbookedWorkersOnly && !worker.isOverbooked) {
+        return false;
+      }
+      
+      return true;
+    });
+  }, [workersWithUtilization, filters, activeFilters]);
+
+  // Get statistics for the filters
+  const filterStats = useMemo(() => {
+    return {
+      availableWorkers: workersWithUtilization.filter(w => w.status === 'available').length,
+      urgentJobs: filteredJobs.filter(j => j.priority === 'urgent').length,
+      overlappingJobs: overlappingJobs.size,
+      overbookedWorkers: workersWithUtilization.filter(w => w.isOverbooked).length
+    };
+  }, [workersWithUtilization, filteredJobs, overlappingJobs]);
+
+  // Toggle filter state
+  const toggleFilter = useCallback((filterName: keyof typeof activeFilters) => {
+    setActiveFilters(prev => ({
+      ...prev,
+      [filterName]: !prev[filterName]
+    }));
+  }, []);
+
+  // Handle job actions
+  const handleJobAction = useCallback((action: string, job: TimelineJob) => {
+    switch (action) {
+      case 'viewDetails':
+        setSelectedJob(job);
+        setShowJobDetails(true);
+        break;
+      case 'markComplete':
+        onJobUpdate?.(job.id, { status: 'completed' });
+        break;
+      case 'cancelJob':
+        onJobUpdate?.(job.id, { status: 'cancelled' });
+        break;
+      default:
+        break;
+    }
+  }, [onJobUpdate]);
+  
+  // Sync scrolling between header, worker list, and body
+  useEffect(() => {
+    const bodyEl = timelineBodyRef.current;
+    const headerEl = headerRef.current;
+    const workerListEl = workerListRef.current;
+
+    if (!bodyEl || !headerEl || !workerListEl) return;
+
+    const handleScroll = () => {
+        headerEl.scrollLeft = bodyEl.scrollLeft;
+        workerListEl.scrollTop = bodyEl.scrollTop;
+    };
+
+    bodyEl.addEventListener('scroll', handleScroll);
+    return () => bodyEl.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Job component for rendering
+  const JobCard = ({ job, isConflict }: { job: TimelineJob; isConflict: boolean }) => {
+    const getJobColor = () => {
+      if (job.color) return job.color;
+      switch (job.priority) {
+        case 'urgent': return '#ef4444';
+        case 'high': return '#f97316';
+        case 'medium': return '#3b82f6';
+        default: return '#6b7280';
+      }
+    };
+
+    return (
+      <div
+        className={cn(
+          "absolute bg-white border rounded-lg p-1.5 shadow-sm overflow-hidden cursor-pointer hover:z-20 hover:scale-105 transition-transform",
+          isConflict && "border-red-500 bg-red-50"
+        )}
+        style={{
+          borderLeftColor: getJobColor(),
+          borderLeftWidth: '4px',
+        }}
+        onClick={() => handleJobAction('viewDetails', job)}
+      >
+        <p className="text-xs font-bold text-gray-800 truncate">{job.title}</p>
+        <p className="text-[11px] text-gray-600 truncate">{job.client_name}</p>
+        {job.location && (
+          <p className="text-[10px] text-gray-500 truncate flex items-center">
+            <MapPin className="h-2 w-2 mr-1" />
+            {job.location}
+          </p>
+        )}
+        <p className="text-[10px] text-gray-500">
+          {format(parseISO(job.scheduled_at), 'h:mm a')} • {job.duration_hours}h
+        </p>
+      </div>
+    );
+  };
+
+  return (
+    <TooltipProvider>
+      <div className="flex flex-col h-[80vh] bg-white rounded-lg shadow-sm border">
+        {/* Header */}
+        <div className="flex items-center justify-between p-3 border-b bg-white z-30">
+          <div className="flex items-center space-x-4">
+            <h2 className="text-lg font-semibold text-gray-800">Schedule</h2>
+            {onViewModeChange && (
+              <div className="flex items-center bg-gray-100 rounded-md p-1">
+                <Button 
+                  size="sm" 
+                  variant={viewMode === 'day' ? 'default' : 'ghost'}
+                  className="text-xs"
+                  onClick={() => onViewModeChange('day')}
+                >
+                  Day
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant={viewMode === 'week' ? 'default' : 'ghost'}
+                  className="text-xs"
+                  onClick={() => onViewModeChange('week')}
+                >
+                  Week
+                </Button>
+              </div>
+            )}
+          </div>
+          
+          <div className="flex items-center bg-white shadow-sm border border-gray-200 rounded-md">
+            <Button size="sm" variant="ghost" className="px-2" onClick={() => onDateChange(addDays(selectedDate, viewMode === 'week' ? -7 : -1))}>
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div className="px-3 py-1.5 text-sm font-medium">
+              {viewMode === 'week' 
+                ? `${format(weekDays[0], 'MMM d')} - ${format(weekDays[6], 'MMM d, yyyy')}`
+                : format(selectedDate, 'MMMM d, yyyy')
+              }
+            </div>
+            <Button size="sm" variant="ghost" className="px-2" onClick={() => onDateChange(addDays(selectedDate, viewMode === 'week' ? 7 : 1))}>
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </div>
+          
+          <div className="flex items-center space-x-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowFilters(!showFilters)}
+              className="flex items-center space-x-1"
+            >
+              <Filter className="h-4 w-4" />
+              <span>Filters</span>
+              {Object.values(activeFilters).some(Boolean) && (
+                <Badge variant="secondary" className="ml-1 text-xs">
+                  {Object.values(activeFilters).filter(Boolean).length}
+                </Badge>
+              )}
+            </Button>
+          </div>
+        </div>
+
+        {/* Filters Panel */}
+        {showFilters && (
+          <div className="border-b bg-gray-50 p-4">
+            <div className="flex flex-wrap items-center gap-4 mb-4">
+              <div className="flex items-center space-x-2">
+                <Input
+                  placeholder="Search jobs or workers..."
+                  value={filters.search}
+                  onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+                  className="w-48"
+                />
+              </div>
+              
+              <Select value={filters.status} onValueChange={(value) => setFilters(prev => ({ ...prev, status: value }))}>
+                <SelectTrigger className="w-32">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="scheduled">Scheduled</SelectItem>
+                  <SelectItem value="in_progress">In Progress</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={filters.priority} onValueChange={(value) => setFilters(prev => ({ ...prev, priority: value }))}>
+                <SelectTrigger className="w-32">
+                  <SelectValue placeholder="Priority" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Priority</SelectItem>
+                  <SelectItem value="urgent">Urgent</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="low">Low</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant={activeFilters.availableWorkersOnly ? "default" : "outline"}
+                onClick={() => toggleFilter('availableWorkersOnly')}
+                className="text-xs"
+              >
+                Available Workers ({filterStats.availableWorkers})
+              </Button>
+              <Button
+                size="sm"
+                variant={activeFilters.urgentJobsOnly ? "default" : "outline"}
+                onClick={() => toggleFilter('urgentJobsOnly')}
+                className="text-xs"
+              >
+                Urgent Jobs ({filterStats.urgentJobs})
+              </Button>
+              <Button
+                size="sm"
+                variant={activeFilters.overlappingJobsOnly ? "default" : "outline"}
+                onClick={() => toggleFilter('overlappingJobsOnly')}
+                className="text-xs"
+              >
+                Overlapping Jobs ({filterStats.overlappingJobs})
+              </Button>
+              <Button
+                size="sm"
+                variant={activeFilters.overbookedWorkersOnly ? "default" : "outline"}
+                onClick={() => toggleFilter('overbookedWorkersOnly')}
+                className="text-xs"
+              >
+                Overbooked Workers ({filterStats.overbookedWorkers})
+              </Button>
+              
+              {Object.values(activeFilters).some(Boolean) && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setActiveFilters({
+                    availableWorkersOnly: false,
+                    urgentJobsOnly: false,
+                    todaysScheduleOnly: false,
+                    overlappingJobsOnly: false,
+                    jobsWithNotesOnly: false,
+                    overbookedWorkersOnly: false
+                  })}
+                  className="text-xs text-gray-500 hover:text-gray-700"
+                >
+                  <X className="h-3 w-3 mr-1" />
+                  Clear All
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Week View Header */}
+        {viewMode === 'week' && (
+          <div className="border-b bg-gray-50">
+            <div className="grid grid-cols-[220px_1fr]">
+              <div className="p-3 border-r">
+                <span className="text-sm font-medium text-gray-700">Workers</span>
+              </div>
+              <div className="grid grid-cols-7">
+                {weekDays.map((day, index) => (
+                  <div key={index} className="p-3 text-center border-r border-gray-200 last:border-r-0">
+                    <div className="text-xs text-gray-500">{format(day, 'EEE')}</div>
+                    <div className="text-sm font-medium">{format(day, 'd')}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Timeline Layout */}
+        {viewMode === 'day' ? (
+          <div className="flex-grow relative grid grid-cols-[auto_1fr] grid-rows-[auto_1fr] overflow-hidden">
+            {/* Top-Left Corner Box */}
+            <div className="sticky top-0 left-0 bg-gray-100 border-b border-r border-gray-200 z-20">
+              <div className="h-12 flex items-center justify-center">
+                <Clock className="h-4 w-4 mr-2 text-gray-600"/>
+                <span className="font-semibold text-gray-700 text-sm">Team</span>
+              </div>
+            </div>
+
+            {/* Time Header */}
+            <div ref={headerRef} className="sticky top-0 bg-white border-b border-gray-200 z-10 overflow-hidden">
+              <div className="flex" style={{ width: `${totalHours * 100}px`}}>
+                {timeSlots.slice(0, -1).map(hour => (
+                  <div key={hour} className="flex-1 border-r border-gray-100 p-2 text-center">
+                    <span className="text-sm font-bold text-gray-700">{format(startOfDay(new Date()).setHours(hour), 'h a')}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Worker List */}
+            <div ref={workerListRef} className="sticky left-0 bg-white border-r border-gray-200 z-10 overflow-hidden">
+              {filteredWorkers.map((worker) => (
+                <div key={worker.id} className="h-[80px] border-b border-gray-100 p-2 flex items-center justify-between">
+                  <div className="flex items-center">
+                    <Avatar className="h-9 w-9 mr-3">
+                      <AvatarImage src={worker.avatar_url || ''} alt={worker.name} />
+                      <AvatarFallback className="bg-blue-500 text-white text-xs">
+                        {worker.name.split(' ').map(n => n[0]).join('')}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <div className="font-semibold text-sm text-gray-800">{worker.name}</div>
+                      <div className="text-xs text-gray-500">{worker.role}</div>
+                      <div className="flex items-center space-x-2 mt-1">
+                        <Badge 
+                          variant={worker.status === 'available' ? 'default' : worker.status === 'busy' ? 'secondary' : 'destructive'}
+                          className="text-xs"
+                        >
+                          {worker.status}
+                        </Badge>
+                        <span className="text-xs text-gray-500">{worker.utilization}% utilized</span>
+                      </div>
+                    </div>
+                  </div>
+                  {worker.isOverbooked && (
+                    <AlertTriangle className="h-4 w-4 text-red-500" />
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Main Timeline Body */}
+            <div ref={timelineBodyRef} className="overflow-auto">
+              <div className="relative" style={{ height: `${filteredWorkers.length * ROW_HEIGHT}px`, width: `${totalHours * 100}px`}}>
+                {/* Background Grid */}
+                <div className="absolute inset-0 grid grid-cols-1" style={{gridTemplateRows: `repeat(${filteredWorkers.length}, ${ROW_HEIGHT}px)`}}>
+                  {filteredWorkers.map((_, index) => <div key={index} className="border-b border-gray-100"></div>)}
+                </div>
+                <div className="absolute inset-0 grid grid-cols-12">
+                  {timeSlots.slice(0,-1).map(hour => <div key={hour} className="border-r border-gray-100"></div>)}
+                </div>
+
+                {/* Jobs */}
+                {filteredWorkers.map((worker, index) => {
+                  const jobsForWorker = workerJobs[worker.id] || [];
+                  return jobsForWorker.map(job => {
+                    const jobStart = parseISO(job.scheduled_at);
+                    const start = jobStart.getHours() + jobStart.getMinutes() / 60;
+                    const left = ((start - timeRange.START_HOUR) / totalHours) * 100;
+                    const width = (job.duration_hours / totalHours) * 100;
+                    const top = index * ROW_HEIGHT;
+                    
+                    return (
+                      <div
+                        key={job.id}
+                        style={{ 
+                          top: `${top + 4}px`, 
+                          left: `${left}%`, 
+                          width: `${width}%`, 
+                          height: `${ROW_HEIGHT - 8}px` 
+                        }}
+                      >
+                        <JobCard job={job} isConflict={overlappingJobs.has(job.id)} />
+                      </div>
+                    );
+                  })
+                })}
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* Week View */
+          <div className="flex-1 overflow-hidden">
+            <div className="space-y-0">
+              {filteredWorkers.map((worker, index) => (
+                <div key={worker.id} className="border-b border-gray-100">
+                  <div className="grid grid-cols-[220px_1fr] h-20">
+                    {/* Worker Info */}
+                    <div className="p-2 border-r border-gray-200 flex items-center justify-between">
+                      <div className="flex items-center">
+                        <Avatar className="h-8 w-8 mr-2">
+                          <AvatarImage src={worker.avatar_url || ''} alt={worker.name} />
+                          <AvatarFallback className="bg-blue-500 text-white text-xs">
+                            {worker.name.split(' ').map(n => n[0]).join('')}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <div className="font-semibold text-sm text-gray-800">{worker.name}</div>
+                          <div className="text-xs text-gray-500">{worker.role}</div>
+                        </div>
+                      </div>
+                      {worker.isOverbooked && (
+                        <AlertTriangle className="h-4 w-4 text-red-500" />
+                      )}
+                    </div>
+                    
+                    {/* Week Days */}
+                    <div className="grid grid-cols-7 relative">
+                      {weekDays.map((day, dayIndex) => {
+                        const dayJobs = (workerJobs[worker.id] || []).filter(job => {
+                          const jobDate = parseISO(job.scheduled_at);
+                          return isSameDay(jobDate, day);
+                        });
+
+                        return (
+                          <div key={dayIndex} className="border-r border-gray-200 last:border-r-0 p-1 relative">
+                            {dayJobs.map((job, jobIndex) => (
+                              <div
+                                key={job.id}
+                                className="mb-1 text-xs bg-blue-100 border border-blue-300 rounded p-1 cursor-pointer hover:bg-blue-200"
+                                onClick={() => handleJobAction('viewDetails', job)}
+                              >
+                                <div className="font-medium truncate">{job.title}</div>
+                                <div className="text-gray-600 truncate">{job.client_name}</div>
+                                <div className="text-gray-500">
+                                  {format(parseISO(job.scheduled_at), 'h:mm a')}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+        
+      {/* Job Details Modal */}
+      {showJobDetails && selectedJob && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" onClick={() => setShowJobDetails(false)}>
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4" onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b flex justify-between items-center">
+              <h2 className="text-lg font-semibold">{selectedJob.title}</h2>
+              <button 
+                className="rounded-full p-1 hover:bg-gray-100" 
+                onClick={() => setShowJobDetails(false)}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div>
+                <h3 className="text-sm font-medium text-gray-500 mb-1">Client</h3>
+                <p>{selectedJob.client_name}</p>
+              </div>
+              <div>
+                <h3 className="text-sm font-medium text-gray-500 mb-1">Schedule</h3>
+                <p>{format(parseISO(selectedJob.scheduled_at), 'PPP p')} • {selectedJob.duration_hours} hours</p>
+              </div>
+              {selectedJob.location && (
+                <div>
+                  <h3 className="text-sm font-medium text-gray-500 mb-1">Location</h3>
+                  <p>{selectedJob.location}</p>
+                </div>
+              )}
+              {selectedJob.description && (
+                <div>
+                  <h3 className="text-sm font-medium text-gray-500 mb-1">Description</h3>
+                  <p className="text-sm">{selectedJob.description}</p>
+                </div>
+              )}
+              <div className="flex items-center gap-2 mt-6">
+                <Button 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={() => {
+                    // Handle edit action
+                    setShowJobDetails(false);
+                  }}
+                >
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
+                <Button 
+                  variant={selectedJob.status === 'completed' ? 'secondary' : 'default'} 
+                  className="flex-1"
+                  onClick={() => {
+                    handleJobAction('markComplete', selectedJob);
+                    setShowJobDetails(false);
+                  }}
+                  disabled={selectedJob.status === 'completed'}
+                >
+                  <Check className="h-4 w-4 mr-2" />
+                  {selectedJob.status === 'completed' ? 'Completed' : 'Mark Complete'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </TooltipProvider>
+  )
+} 

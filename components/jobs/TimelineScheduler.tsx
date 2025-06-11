@@ -1,16 +1,16 @@
 'use client'
 
 import React, { useState, useMemo, useCallback } from 'react'
-import { format, startOfDay, addHours, isSameDay, parseISO, differenceInMinutes } from 'date-fns'
+import { format, startOfDay, addHours, isSameDay, parseISO, differenceInMinutes, addDays } from 'date-fns'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Clock, MapPin, User, AlertTriangle, Calendar, Filter, X, CalendarClock } from 'lucide-react'
+import { Clock, MapPin, User, AlertTriangle, Calendar, Filter, X, CalendarClock, ArrowLeft, ArrowRight, MoreHorizontal, Phone, Activity, BriefcaseBusiness, ChevronRight, Edit, Check, RotateCw, Trash2, ExternalLink } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { JobCard } from './JobCard'
+import { Button } from '@/components/ui/button'
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
+import { TooltipProvider } from '@/components/ui/tooltip'
+import { DateRangePicker } from './DateRangePicker'
 import { WeekTimelineHeader } from './WeekTimelineHeader'
 import { WeekWorkerLane } from './WeekWorkerLane'
-import { TimeAxis } from './TimeAxis'
-import { WorkerRow } from './WorkerRow'
-import { DateRangePicker } from './DateRangePicker'
 
 export interface Job {
   id: string
@@ -58,10 +58,24 @@ interface TimelineSchedulerProps {
   onJobMove: (jobId: string, newWorkerId: string | null, newTime: Date) => void
 }
 
-// Determine the earliest start time and latest end time among all workers
+// Unified time calculation system - used consistently across all components
+const calculateTimePosition = (hour: number, minute: number, startHour: number, endHour: number) => {
+  const totalHours = endHour - startHour
+  const hoursSinceStart = hour - startHour
+  const minutesFraction = minute / 60
+  const relativePosition = hoursSinceStart + minutesFraction
+  return Math.max(0, Math.min(95, (relativePosition / totalHours) * 100))
+}
+
+const calculateTimeWidth = (durationHours: number, startHour: number, endHour: number) => {
+  const totalHours = endHour - startHour
+  return Math.max(5, Math.min(95, (durationHours / totalHours) * 100))
+}
+
+// Determine work hours based on all workers
 const determineWorkHours = (workers: Worker[]) => {
-  let earliestStart = 9; // Default start at 9 AM
-  let latestEnd = 17; // Default end at 5 PM
+  let earliestStart = 7; // Default 7 AM
+  let latestEnd = 19; // Default 7 PM
   
   workers.forEach(worker => {
     if (worker.working_hours && worker.working_hours.length > 0) {
@@ -75,12 +89,23 @@ const determineWorkHours = (workers: Worker[]) => {
     }
   });
   
-  return { START_HOUR: Math.max(4, earliestStart - 1), END_HOUR: Math.min(22, latestEnd + 1) };
+  return { START_HOUR: Math.max(6, earliestStart - 1), END_HOUR: Math.min(22, latestEnd + 1) };
 };
 
-// Constants for layout
-const HOUR_WIDTH = 100
-const WORKER_HEIGHT = 180
+// Status and priority configurations
+const statusColors = {
+  scheduled: { bg: 'bg-blue-50', border: 'border-l-blue-400', text: 'text-blue-600', dot: 'bg-blue-500' },
+  in_progress: { bg: 'bg-yellow-50', border: 'border-l-yellow-400', text: 'text-yellow-600', dot: 'bg-yellow-500' },
+  completed: { bg: 'bg-green-50', border: 'border-l-green-400', text: 'text-green-600', dot: 'bg-green-500' },
+  cancelled: { bg: 'bg-red-50', border: 'border-l-red-400', text: 'text-red-600', dot: 'bg-red-500' },
+  overdue: { bg: 'bg-red-50', border: 'border-l-red-400', text: 'text-red-600', dot: 'bg-red-500' }
+}
+
+const workerStatusColors = {
+  available: { bg: 'bg-green-100', dot: 'bg-green-500', text: 'text-green-700' },
+  busy: { bg: 'bg-amber-100', dot: 'bg-amber-500', text: 'text-amber-700' },
+  offline: { bg: 'bg-red-100', dot: 'bg-red-500', text: 'text-red-700' }
+}
 
 export const TimelineScheduler = React.memo(function TimelineScheduler({ 
   jobs, 
@@ -96,7 +121,6 @@ export const TimelineScheduler = React.memo(function TimelineScheduler({
   const { START_HOUR, END_HOUR } = determineWorkHours(workers);
   
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
-  const [zoomLevel] = useState<'1hr'>('1hr');
   const [filters, setFilters] = useState<FilterState>({
     search: '',
     status: 'all',
@@ -118,8 +142,14 @@ export const TimelineScheduler = React.memo(function TimelineScheduler({
     jobsWithNotesOnly: false,
     overbookedWorkersOnly: false
   });
-  const [ref, bounds] = useState<any>({})
   const [showJobDetails, setShowJobDetails] = useState<boolean>(false);
+  const [now, setNow] = useState<Date>(() => new Date())
+  
+  // Update current time every minute
+  React.useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60000)
+    return () => clearInterval(id)
+  }, [])
   
   // Handle job actions from JobCard component
   const handleJobAction = useCallback((action: string, job: Job) => {
@@ -156,6 +186,12 @@ export const TimelineScheduler = React.memo(function TimelineScheduler({
   // Job filtering logic
   const filteredJobs = useMemo(() => {
     return jobs.filter(job => {
+      // Date filter for current view
+      const jobDate = parseISO(job.scheduled_at);
+      if (viewMode === 'day' && !isSameDay(jobDate, selectedDate)) {
+        return false;
+      }
+      
       // Search filter
       if (filters.search && !job.title.toLowerCase().includes(filters.search.toLowerCase())) {
         return false;
@@ -181,16 +217,13 @@ export const TimelineScheduler = React.memo(function TimelineScheduler({
         return false;
       }
 
-      if (activeFilters.todaysScheduleOnly) {
-        const jobDate = new Date(job.scheduled_at);
-        if (!isSameDay(jobDate, selectedDate)) {
-          return false;
-        }
+      if (activeFilters.todaysScheduleOnly && !isSameDay(jobDate, selectedDate)) {
+        return false;
       }
 
       return true;
     });
-  }, [jobs, filters, activeFilters, selectedDate]);
+  }, [jobs, filters, activeFilters, selectedDate, viewMode]);
 
   // Group jobs by worker
   const workerJobs = useMemo(() => {
@@ -268,13 +301,14 @@ export const TimelineScheduler = React.memo(function TimelineScheduler({
     return result;
   }, [workersWithUtilization, activeFilters.availableWorkersOnly, activeFilters.overbookedWorkersOnly]);
 
+  // Generate time slots
   const timeSlots = useMemo(() => {
     const slots = []
-    for (let hour = START_HOUR; hour <= END_HOUR; hour++) {
-      slots.push(addHours(startOfDay(selectedDate), hour))
+    for (let hour = START_HOUR; hour < END_HOUR; hour++) {
+      slots.push(hour)
     }
     return slots
-  }, [selectedDate, START_HOUR, END_HOUR])
+  }, [START_HOUR, END_HOUR])
   
   // Toggle filter state
   const toggleFilter = useCallback((filterName: keyof typeof activeFilters) => {
@@ -294,386 +328,703 @@ export const TimelineScheduler = React.memo(function TimelineScheduler({
     };
   }, [workersWithUtilization, filteredJobs, overlappingJobs]);
 
-  return (
-    <div className="flex flex-col h-full bg-gray-50">
-      {/* Header Controls - Sticky */}
-      <div className="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-gray-200 shadow-sm">
-        <div className="p-4 lg:p-6">
-          <div className="flex flex-col space-y-4 lg:flex-row lg:items-center lg:justify-between lg:space-y-0">
-            <div className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:space-y-0 sm:space-x-4">
-              <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Timeline Scheduler</h2>
-              <DateRangePicker
-                selectedDate={selectedDate}
-                onDateChange={onDateChange}
-                viewMode={viewMode}
-                onViewModeChange={onViewModeChange}
-              />
-            </div>
-          </div>
-          
-          {/* Enhanced Filters with Active States - Sticky */}
-          <div className="flex items-center justify-between space-x-4 p-3 bg-white/90 border border-gray-200 rounded-lg shadow-sm backdrop-blur-sm mt-4">
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex items-center gap-2">
-                <Filter className="h-4 w-4 text-blue-600" />
-                <span className="text-sm font-medium text-gray-700">Quick Filters:</span>
+  // Helper functions for worker info
+  const getWorkerStatusMessage = (worker: typeof filteredWorkers[0]) => {
+    if (worker.status === 'offline') return 'Out of Office';
+    if (worker.jobCount === 0) return 'Available All Day';
+    
+    const upcomingJobs = (workerJobs[worker.id] || [])
+      .filter(job => new Date(job.scheduled_at) > now)
+      .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
+      
+    if (upcomingJobs.length > 0) {
+      const nextJob = upcomingJobs[0];
+      const nextJobTime = new Date(nextJob.scheduled_at);
+      return `Next job at ${format(nextJobTime, 'h:mm a')}`;
+    }
+    
+    return worker.utilization > 80 ? 'Heavily Booked' : 'Partially Available';
+  };
+
+  const getWorkingHours = (worker: Worker) => {
+    if (!worker.working_hours || worker.working_hours.length === 0) {
+      return '9:00 AM - 5:00 PM';
+    }
+    
+    const shift = worker.working_hours[0];
+    const formatTime = (timeStr: string) => {
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      const period = hours >= 12 ? 'PM' : 'AM';
+      const hour12 = hours % 12 || 12;
+      return `${hour12}:${minutes.toString().padStart(2, '0')} ${period}`;
+    };
+    
+    return `${formatTime(shift.start)} - ${formatTime(shift.end)}`;
+  };
+
+  const getUtilizationColor = (utilization: number) => {
+    if (utilization >= 100) return 'bg-red-500'
+    if (utilization >= 80) return 'bg-amber-500'
+    if (utilization >= 60) return 'bg-yellow-500'
+    return 'bg-green-500'
+  }
+
+  const getUtilizationBg = (utilization: number) => {
+    if (utilization >= 100) return 'bg-red-50 border-red-200'
+    if (utilization >= 80) return 'bg-amber-50 border-amber-200'
+    if (utilization >= 60) return 'bg-yellow-50 border-yellow-200'
+    return 'bg-green-50 border-green-200'
+  }
+
+  // Calculate current time position
+  const getCurrentTimePosition = () => {
+    const currentHour = now.getHours()
+    const currentMinute = now.getMinutes()
+    
+    if (currentHour < START_HOUR || currentHour > END_HOUR) {
+      return null;
+    }
+    
+    return calculateTimePosition(currentHour, currentMinute, START_HOUR, END_HOUR);
+  }
+
+  // Week view rendering
+  if (viewMode === 'week') {
+    return (
+      <div className="flex flex-col h-full bg-gray-50">
+        <div className="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-gray-200 shadow-sm">
+          <div className="p-4 lg:p-6">
+            <div className="flex flex-col space-y-4 lg:flex-row lg:items-center lg:justify-between lg:space-y-0">
+              <div className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:space-y-0 sm:space-x-4">
+                <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Timeline Scheduler</h2>
+                <DateRangePicker
+                  selectedDate={selectedDate}
+                  onDateChange={onDateChange}
+                  viewMode={viewMode}
+                  onViewModeChange={onViewModeChange}
+                />
               </div>
-              
-              <button
-                onClick={() => toggleFilter('availableWorkersOnly')}
-                className={cn(
-                  "flex items-center px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-                  activeFilters.availableWorkersOnly
-                    ? "bg-green-100 text-green-700 border border-green-200"
-                    : "bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200"
-                )}
-              >
-                Available Workers ({filterStats.availableWorkers})
-              </button>
-              
-              <button
-                onClick={() => toggleFilter('urgentJobsOnly')}
-                className={cn(
-                  "flex items-center px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-                  activeFilters.urgentJobsOnly
-                    ? "bg-red-100 text-red-700 border border-red-200"
-                    : "bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200"
-                )}
-              >
-                Urgent Jobs ({filterStats.urgentJobs})
-              </button>
-              
-              <button
-                onClick={() => toggleFilter('overlappingJobsOnly')}
-                className={cn(
-                  "flex items-center px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-                  activeFilters.overlappingJobsOnly
-                    ? "bg-amber-100 text-amber-700 border border-amber-200"
-                    : "bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200"
-                )}
-              >
-                Overlapping Jobs ({filterStats.overlappingJobs})
-              </button>
-              
-              <button
-                onClick={() => toggleFilter('overbookedWorkersOnly')}
-                className={cn(
-                  "flex items-center px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-                  activeFilters.overbookedWorkersOnly
-                    ? "bg-blue-100 text-blue-700 border border-blue-200"
-                    : "bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200"
-                )}
-              >
-                Overbooked Workers ({filterStats.overbookedWorkers})
-              </button>
-              
-              <button
-                onClick={() => toggleFilter('todaysScheduleOnly')}
-                className={cn(
-                  "flex items-center px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-                  activeFilters.todaysScheduleOnly
-                    ? "bg-indigo-100 text-indigo-700 border border-indigo-200"
-                    : "bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200"
-                )}
-              >
-                Today's Schedule
-              </button>
             </div>
-            
-            {/* Reset Filters */}
-            {Object.values(activeFilters).some(Boolean) && (
-              <button
-                onClick={() => setActiveFilters({
-                  availableWorkersOnly: false,
-                  urgentJobsOnly: false,
-                  todaysScheduleOnly: false,
-                  overlappingJobsOnly: false,
-                  jobsWithNotesOnly: false,
-                  overbookedWorkersOnly: false,
-                })}
-                className="px-3 py-1.5 bg-white border border-gray-300 rounded-md text-xs font-medium text-gray-700 hover:bg-gray-100 transition-colors flex items-center gap-1"
-              >
-                Reset Filters
-              </button>
-            )}
           </div>
         </div>
-      </div>
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Main Timeline */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Enhanced Time Header - Only show for day view */}
-          {viewMode === 'day' && (
-            <TimeAxis 
-              startHour={START_HOUR}
-              endHour={END_HOUR}
-              zoomLevel={zoomLevel}
-              onZoomChange={() => {}}
-              viewMode={viewMode}
-            />
-          )}
-
-          {/* Worker Lanes - With Filtering Applied */}
-          <div ref={ref} className="flex-1 overflow-auto">
-            <div className="relative">
+        <div className="flex flex-1 overflow-hidden">
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <WeekTimelineHeader selectedDate={selectedDate} hourWidth={100} />
+            <div className="flex-1 overflow-auto">
               {filteredWorkers.map((worker, index) => (
-                viewMode === 'week' ? (
-                  <WeekWorkerLane
-                    key={worker.id}
-                    worker={worker}
-                    jobs={workerJobs[worker.id] || []}
-                    selectedDate={selectedDate}
-                    hourWidth={HOUR_WIDTH}
-                    height={WORKER_HEIGHT}
-                    isEven={index % 2 === 0}
-                  />
-                ) : (
-                  <WorkerRow
-                    key={worker.id}
-                    worker={worker}
-                    jobs={workerJobs[worker.id] || []}
-                    isEven={index % 2 === 0}
-                    height={WORKER_HEIGHT}
-                    zoomLevel={zoomLevel}
-                  >
-                    {/* Job positioning for day view - improved spacing */}
-                    {(workerJobs[worker.id] || []).map((job, jobIndex) => {
-                      const jobStart = parseISO(job.scheduled_at)
-                      const minutesFromStart = differenceInMinutes(jobStart, addHours(startOfDay(selectedDate), START_HOUR))
-                      
-                      // Calculate the precise position based on the hourWidth and zoom level
-                      const totalMinutesInDay = (END_HOUR - START_HOUR) * 60
-                      const percentageOfDay = minutesFromStart / totalMinutesInDay
-                      const left = percentageOfDay * 100 + '%' // Use percentage for responsive layout
-                      
-                      // Calculate width based on duration
-                      const durationMinutes = job.duration_hours * 60
-                      const widthPercentage = (durationMinutes / totalMinutesInDay) * 100
-                      const width = widthPercentage + '%'
-
-                      // Check for conflicts with other jobs in the same worker lane
-                      const hasConflict = overlappingJobs.has(job.id);
-
-                      // Stack overlapping jobs vertically with improved spacing
-                      const overlappingPrevJobs = (workerJobs[worker.id] || [])
-                        .filter((otherJob, otherIndex) => {
-                          if (otherIndex >= jobIndex) return false
-                          const otherStart = parseISO(otherJob.scheduled_at)
-                          const otherEnd = addHours(otherStart, otherJob.duration_hours)
-                          const jobEnd = addHours(jobStart, job.duration_hours)
-                          return (jobStart < otherEnd && jobEnd > otherStart)
-                        })
-                      
-                      // Increased vertical offset for better spacing between stacked jobs
-                      const verticalOffset = overlappingPrevJobs.length * 45 
-
-                      // Skip this job if filtered out by overlapping jobs filter
-                      if (activeFilters.overlappingJobsOnly && !hasConflict) {
-                        return null;
-                      }
-
-                      return (
-                        <div
-                          key={job.id}
-                          className={cn(
-                            "absolute z-20 transition-all duration-200 cursor-pointer",
-                            hasConflict && "ring-2 ring-red-300 ring-offset-1"
-                          )}
-                          style={{
-                            left,
-                            width,
-                            top: `${16 + verticalOffset}px`, // Better top margin with more space
-                            maxHeight: `${WORKER_HEIGHT - 24}px`, // Prevent overflow
-                          }}
-                          onClick={() => {
-                            setSelectedJob(job);
-                            setShowJobDetails(true);
-                          }}
-                        >
-                          <JobCard 
-                            job={job} 
-                            hasConflict={hasConflict} 
-                            onAction={handleJobAction}
-                          />
-                        </div>
-                      )
-                    })}
-                  </WorkerRow>
-                )
+                <WeekWorkerLane
+                  key={worker.id}
+                  worker={worker}
+                  jobs={workerJobs[worker.id] || []}
+                  selectedDate={selectedDate}
+                  hourWidth={100}
+                  height={180}
+                  isEven={index % 2 === 0}
+                />
               ))}
-              
-              {/* Empty state when no workers match filters */}
-              {filteredWorkers.length === 0 && (
-                <div className="flex flex-col items-center justify-center h-64 text-center p-8">
-                  <div className="bg-blue-50 rounded-full p-3 mb-2">
-                    <User className="h-6 w-6 text-blue-500" />
-                  </div>
-                  <h3 className="text-lg font-medium text-gray-900">No workers match the filters</h3>
-                  <p className="text-gray-500 mt-1 max-w-md">
-                    Try adjusting your filters or adding more workers to see them here.
-                  </p>
-                </div>
-              )}
-
-              {/* Empty state when there are workers but no jobs */}
-              {filteredWorkers.length > 0 && filteredJobs.length === 0 && (
-                <div className="border-t border-gray-200 mt-4 pt-4 text-center p-8">
-                  <div className="bg-amber-50 rounded-full p-3 inline-block mb-2">
-                    <Calendar className="h-6 w-6 text-amber-500" />
-                  </div>
-                  <h3 className="text-lg font-medium text-gray-900">No jobs to display</h3>
-                  <p className="text-gray-500 mt-1 max-w-md mx-auto">
-                    There are no jobs matching your current filters. Try adjusting your filters or add new jobs.
-                  </p>
-                </div>
-              )}
             </div>
           </div>
         </div>
       </div>
+    );
+  }
 
-      {/* Job Details Modal */}
-      {showJobDetails && selectedJob && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-auto">
-            <div className="flex items-center justify-between p-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">Job Details</h3>
-              <button 
-                onClick={() => setShowJobDetails(false)}
-                className="text-gray-500 hover:text-gray-700 p-1"
-              >
-                <X className="h-5 w-5" />
-              </button>
+  // Day view rendering with unified CSS Grid approach
+  return (
+    <TooltipProvider>
+      <div className="flex flex-col h-full bg-gray-50">
+        {/* Header Controls - Sticky */}
+        <div className="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-gray-200 shadow-sm">
+          <div className="p-4 lg:p-6">
+            <div className="flex flex-col space-y-4 lg:flex-row lg:items-center lg:justify-between lg:space-y-0">
+              <div className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:space-y-0 sm:space-x-4">
+                <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Timeline Scheduler</h2>
+                <DateRangePicker
+                  selectedDate={selectedDate}
+                  onDateChange={onDateChange}
+                  viewMode={viewMode}
+                  onViewModeChange={onViewModeChange}
+                />
+              </div>
             </div>
             
-            <div className="p-6">
-              {/* Job Header */}
-              <div className="flex flex-col space-y-4">
-                <div className="flex items-start justify-between">
-                  <h2 className="text-xl font-bold text-gray-900">{selectedJob.title}</h2>
-                  <span className={cn(
-                    "px-3 py-1 rounded-full text-xs font-medium",
-                    selectedJob.status === 'scheduled' ? "bg-blue-100 text-blue-800" :
-                    selectedJob.status === 'in_progress' ? "bg-yellow-100 text-yellow-800" :
-                    selectedJob.status === 'completed' ? "bg-green-100 text-green-800" :
-                    "bg-red-100 text-red-800"
-                  )}>
-                    {selectedJob.status.replace('_', ' ')}
-                  </span>
+            {/* Enhanced Filters */}
+            <div className="flex items-center justify-between space-x-4 p-3 bg-white/90 border border-gray-200 rounded-lg shadow-sm backdrop-blur-sm mt-4">
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Filter className="h-4 w-4 text-blue-600" />
+                  <span className="text-sm font-medium text-gray-700">Quick Filters:</span>
                 </div>
                 
-                {selectedJob.description && (
-                  <p className="text-gray-600">{selectedJob.description}</p>
-                )}
+                <button
+                  onClick={() => toggleFilter('availableWorkersOnly')}
+                  className={cn(
+                    "flex items-center px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                    activeFilters.availableWorkersOnly
+                      ? "bg-green-100 text-green-700 border border-green-200"
+                      : "bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200"
+                  )}
+                >
+                  Available Workers ({filterStats.availableWorkers})
+                </button>
+                
+                <button
+                  onClick={() => toggleFilter('urgentJobsOnly')}
+                  className={cn(
+                    "flex items-center px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                    activeFilters.urgentJobsOnly
+                      ? "bg-red-100 text-red-700 border border-red-200"
+                      : "bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200"
+                  )}
+                >
+                  Urgent Jobs ({filterStats.urgentJobs})
+                </button>
+                
+                <button
+                  onClick={() => toggleFilter('overlappingJobsOnly')}
+                  className={cn(
+                    "flex items-center px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                    activeFilters.overlappingJobsOnly
+                      ? "bg-amber-100 text-amber-700 border border-amber-200"
+                      : "bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200"
+                  )}
+                >
+                  Overlapping Jobs ({filterStats.overlappingJobs})
+                </button>
+                
+                <button
+                  onClick={() => toggleFilter('overbookedWorkersOnly')}
+                  className={cn(
+                    "flex items-center px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                    activeFilters.overbookedWorkersOnly
+                      ? "bg-blue-100 text-blue-700 border border-blue-200"
+                      : "bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200"
+                  )}
+                >
+                  Overbooked Workers ({filterStats.overbookedWorkers})
+                </button>
               </div>
               
-              {/* Job Details */}
-              <div className="mt-6 space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Client */}
-                  <div className="flex items-center gap-2 bg-gray-50 p-3 rounded-lg">
-                    <User className="h-5 w-5 text-blue-500" />
-                    <div>
-                      <div className="text-xs text-gray-500">Client</div>
-                      <div className="font-medium">{selectedJob.client_name}</div>
-                    </div>
+              {/* Reset Filters */}
+              {Object.values(activeFilters).some(Boolean) && (
+                <button
+                  onClick={() => setActiveFilters({
+                    availableWorkersOnly: false,
+                    urgentJobsOnly: false,
+                    todaysScheduleOnly: false,
+                    overlappingJobsOnly: false,
+                    jobsWithNotesOnly: false,
+                    overbookedWorkersOnly: false,
+                  })}
+                  className="px-3 py-1.5 bg-white border border-gray-300 rounded-md text-xs font-medium text-gray-700 hover:bg-gray-100 transition-colors flex items-center gap-1"
+                >
+                  Reset Filters
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Synchronized CSS Grid Timeline */}
+        <div className="flex-1 overflow-auto">
+          <div
+            className="relative"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '280px 1fr',
+              gridTemplateRows: `60px repeat(${filteredWorkers.length}, 180px)`,
+              minWidth: `${timeSlots.length * 120 + 280}px`
+            }}
+          >
+            {/* Header Left: Worker Column Title */}
+            <div className="sticky top-0 z-20 bg-gradient-to-r from-gray-50 to-gray-100 border-r border-b border-gray-200 p-3 flex items-center justify-center shadow-sm">
+              <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                <Clock className="h-4 w-4" />
+                Team Schedule
+              </div>
+            </div>
+
+            {/* Header Right: Time Axis */}
+            <div className="sticky top-0 z-20 bg-white border-b border-gray-200 grid shadow-sm"
+                 style={{ gridTemplateColumns: `repeat(${timeSlots.length}, 1fr)` }}>
+              {timeSlots.map((hour, index) => (
+                <div key={hour} className="border-r border-gray-100 last:border-r-0 p-2 text-center relative">
+                  <div className="text-sm font-bold text-gray-800">
+                    {format(new Date().setHours(hour, 0), 'h a')}
                   </div>
-                  
-                  {/* Worker */}
-                  <div className="flex items-center gap-2 bg-gray-50 p-3 rounded-lg">
-                    <User className="h-5 w-5 text-indigo-500" />
-                    <div>
-                      <div className="text-xs text-gray-500">Assigned To</div>
-                      <div className="font-medium">{selectedJob.worker_name || 'Unassigned'}</div>
-                    </div>
-                  </div>
-                  
-                  {/* Schedule */}
-                  <div className="flex items-center gap-2 bg-gray-50 p-3 rounded-lg">
-                    <CalendarClock className="h-5 w-5 text-green-500" />
-                    <div>
-                      <div className="text-xs text-gray-500">Schedule</div>
-                      <div className="font-medium">
-                        {format(new Date(selectedJob.scheduled_at), 'MMM d, yyyy')} at {format(new Date(selectedJob.scheduled_at), 'h:mm a')}
+                  {/* Business hours highlighting */}
+                  {hour >= 9 && hour < 17 && (
+                    <div className="absolute inset-0 bg-blue-50/40 border-l border-blue-100/50 -z-10" />
+                  )}
+                  {/* Hour background shading */}
+                  <div className={cn(
+                    "absolute inset-0 -z-20",
+                    index % 2 === 0 ? "bg-gray-50/50" : "bg-white"
+                  )} />
+                </div>
+              ))}
+              
+              {/* Current Time Indicator in Header */}
+              {(() => {
+                const position = getCurrentTimePosition();
+                if (position !== null) {
+                  return (
+                    <div 
+                      className="absolute top-0 bottom-0 w-[2px] bg-red-500 z-30 pointer-events-none shadow-md"
+                      style={{ left: `${position}%` }}
+                    >
+                      <div className="absolute -top-0.5 -translate-x-1/2 z-20">
+                        <div className="bg-red-600 text-white text-xs px-2 py-0.5 rounded shadow-lg flex items-center gap-1 whitespace-nowrap mb-1 font-medium">
+                          <span>NOW</span>
+                          <span className="font-mono">— {format(now, 'h:mm a')}</span>
+                        </div>
                       </div>
-                      <div className="text-sm text-gray-500">Duration: {selectedJob.duration_hours} hour{selectedJob.duration_hours !== 1 ? 's' : ''}</div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+            </div>
+
+            {/* Worker Column */}
+            <div className="sticky left-0 z-10" style={{gridRow: `span ${filteredWorkers.length}`}}>
+              {filteredWorkers.map((worker, index) => (
+                <motion.div
+                  key={worker.id}
+                  className={cn(
+                    "border-r border-b border-gray-200/80 p-4 flex items-center h-[180px] transition-all duration-300 group",
+                    index % 2 === 0 ? "bg-gradient-to-r from-gray-50/50 via-gray-50/30 to-white" : "bg-white"
+                  )}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: index * 0.1 }}
+                >
+                  <div className="flex flex-col w-full">
+                    {/* Worker Header */}
+                    <div className="flex items-center mb-3">
+                      <div className="relative mr-3">
+                        <Avatar className="h-12 w-12 border-2 border-white shadow-sm">
+                          <AvatarImage src={worker.avatar} alt={worker.name} />
+                          <AvatarFallback className="text-sm font-semibold bg-blue-500 text-white">
+                            {worker.name.split(' ').map(n => n[0]).join('')}
+                          </AvatarFallback>
+                        </Avatar>
+                        
+                        {/* Status Indicator */}
+                        <div className={cn(
+                          'absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white flex items-center justify-center',
+                          workerStatusColors[worker.status].dot
+                        )} />
+                      </div>
+
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-sm text-gray-900 truncate">
+                          {worker.name}
+                        </h3>
+                        <div className="text-xs text-gray-500">{worker.role}</div>
+                      </div>
+                      
+                      {/* Context Menu */}
+                      <div className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 rounded-full hover:bg-blue-50"
+                        >
+                          <MoreHorizontal className="h-3.5 w-3.5 text-gray-500" />
+                        </Button>
+                      </div>
+                    </div>
+                    
+                    {/* Working Hours */}
+                    <div className="flex items-center gap-2 mb-2 text-xs">
+                      <Clock className="h-3.5 w-3.5 text-blue-500" />
+                      <span className="text-gray-700">{getWorkingHours(worker)}</span>
+                    </div>
+                    
+                    {/* Job Count */}
+                    <div className="flex items-center gap-2 mb-3 text-xs">
+                      <BriefcaseBusiness className="h-3.5 w-3.5 text-gray-500" />
+                      <span className="text-gray-700">{worker.jobCount} job{worker.jobCount !== 1 ? 's' : ''} today</span>
+                    </div>
+
+                    {/* Status & Utilization */}
+                    <div className="flex items-center justify-between">
+                      <div className={cn(
+                        'px-2 py-1 rounded-full text-xs font-medium',
+                        workerStatusColors[worker.status].bg,
+                        workerStatusColors[worker.status].text
+                      )}>
+                        {getWorkerStatusMessage(worker)}
+                      </div>
+                      
+                      {/* Utilization Bar */}
+                      <div className="flex items-center gap-2">
+                        <div className={cn(
+                          'w-16 h-2.5 rounded-full border',
+                          getUtilizationBg(worker.utilization)
+                        )}>
+                          <div 
+                            className={cn(
+                              'h-full rounded-full transition-all',
+                              getUtilizationColor(worker.utilization)
+                            )}
+                            style={{ width: `${Math.min(worker.utilization, 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-medium text-gray-600">
+                          {Math.round(worker.utilization)}%
+                        </span>
+                      </div>
                     </div>
                   </div>
+                </motion.div>
+              ))}
+            </div>
+
+            {/* Timeline Grid Content */}
+            <div className="relative col-start-2" style={{gridRow: `span ${filteredWorkers.length}`}}>
+              {/* Vertical Grid Lines */}
+              <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${timeSlots.length}, 1fr)`}}>
+                {timeSlots.map(hour => (
+                  <div key={hour} className="border-r border-gray-100 last:border-r-0"></div>
+                ))}
+              </div>
+
+              {/* Worker Rows + Jobs */}
+              <div className="relative" style={{ display: 'grid', gridTemplateRows: `repeat(${filteredWorkers.length}, 180px)`}}>
+                {filteredWorkers.map((worker) => {
+                  const jobsForWorker = workerJobs[worker.id] || [];
+                  return (
+                    <div key={worker.id} className="border-b border-gray-200/60 relative overflow-visible">
+                      {/* Worker Availability Background */}
+                      {worker.working_hours?.map((shift, shiftIndex) => {
+                        const [startHour, startMin] = shift.start.split(':').map(Number);
+                        const [endHour, endMin] = shift.end.split(':').map(Number);
+                        
+                        const left = calculateTimePosition(startHour, startMin, START_HOUR, END_HOUR);
+                        const width = calculateTimeWidth((endHour + endMin/60) - (startHour + startMin/60), START_HOUR, END_HOUR);
+
+                        return (
+                          <div 
+                            key={shiftIndex} 
+                            className="absolute top-0 bottom-0 bg-green-500/8 border-l border-green-200/50"
+                            style={{ left: `${left}%`, width: `${width}%`}} 
+                          />
+                        )
+                      })}
+
+                      {/* Jobs with proper stacking */}
+                      {jobsForWorker.map((job, jobIndex) => {
+                        const jobStart = parseISO(job.scheduled_at)
+                        const jobHour = jobStart.getHours()
+                        const jobMinute = jobStart.getMinutes()
+                        
+                        const left = calculateTimePosition(jobHour, jobMinute, START_HOUR, END_HOUR)
+                        const width = calculateTimeWidth(job.duration_hours, START_HOUR, END_HOUR)
+                        
+                        if (left < 0 || left > 95) return null;
+
+                        const hasConflict = overlappingJobs.has(job.id);
+                        
+                        // Skip if filtered out by overlapping jobs filter
+                        if (activeFilters.overlappingJobsOnly && !hasConflict) {
+                          return null;
+                        }
+
+                        // Calculate stacking offset for overlapping jobs
+                        const overlappingPrevJobs = jobsForWorker
+                          .filter((otherJob, otherIndex) => {
+                            if (otherIndex >= jobIndex) return false
+                            const otherStart = parseISO(otherJob.scheduled_at)
+                            const otherEnd = addHours(otherStart, otherJob.duration_hours)
+                            const jobEnd = addHours(jobStart, job.duration_hours)
+                            return (jobStart < otherEnd && jobEnd > otherStart)
+                          })
+                        
+                        const verticalOffset = overlappingPrevJobs.length * 50
+
+                        return (
+                          <motion.div
+                            key={job.id}
+                            className={cn(
+                              'absolute z-20 cursor-pointer transition-all duration-200',
+                              'rounded-lg border-l-4 border border-gray-200 shadow hover:shadow-md',
+                              'p-3 min-h-[90px] bg-white/95 backdrop-blur-sm',
+                              statusColors[job.status as keyof typeof statusColors]?.bg,
+                              statusColors[job.status as keyof typeof statusColors]?.border,
+                              hasConflict && 'ring-2 ring-red-400 ring-offset-1'
+                            )}
+                            style={{ 
+                              left: `${left}%`, 
+                              width: `${width}%`,
+                              top: `${12 + verticalOffset}px`,
+                              maxHeight: `${180 - 24}px`
+                            }}
+                            onClick={() => {
+                              setSelectedJob(job);
+                              setShowJobDetails(true);
+                            }}
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            whileHover={{ scale: 1.02, y: -2 }}
+                            whileTap={{ scale: 0.98 }}
+                          >
+                            {/* Job Header */}
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <div className={cn(
+                                  'w-2 h-2 rounded-full',
+                                  statusColors[job.status as keyof typeof statusColors]?.dot
+                                )} />
+                                <span className={cn(
+                                  'text-xs px-2 py-0.5 rounded-full font-medium',
+                                  statusColors[job.status as keyof typeof statusColors]?.text,
+                                  'bg-white/80'
+                                )}>
+                                  {job.status.replace('_', ' ')}
+                                </span>
+                                
+                                {job.priority === 'urgent' && (
+                                  <span className="bg-red-100 text-red-600 text-xs font-medium px-1.5 py-0.5 rounded-sm">
+                                    Urgent
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Job Content */}
+                            <div className="space-y-2">
+                              <h4 className="font-semibold text-sm text-gray-900 line-clamp-2 leading-tight">
+                                {job.title}
+                              </h4>
+
+                              <div className="flex items-center gap-1 text-xs">
+                                <Clock className="h-3 w-3 text-blue-600" />
+                                <span className="font-medium text-blue-700">
+                                  {format(jobStart, 'h:mm a')}
+                                </span>
+                                <ChevronRight className="h-3 w-3 text-gray-400" />
+                                <span className="font-medium text-blue-700">
+                                  {format(addHours(jobStart, job.duration_hours), 'h:mm a')}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-1 text-xs text-gray-600">
+                                <User className="h-3 w-3 text-indigo-500" />
+                                <span className="truncate font-medium">{job.client_name}</span>
+                              </div>
+                              
+                              {job.location && (
+                                <div className="flex items-center gap-1 text-xs text-gray-500">
+                                  <MapPin className="h-3 w-3" />
+                                  <span className="truncate">{job.location.split(',')[0]}</span>
+                                </div>
+                              )}
+                              
+                              {hasConflict && (
+                                <div className="flex items-center gap-1 text-xs text-red-600 mt-1 bg-red-50 px-1.5 py-1 rounded">
+                                  <AlertTriangle className="h-3 w-3" />
+                                  <span>Scheduling conflict</span>
+                                </div>
+                              )}
+                            </div>
+                          </motion.div>
+                        )
+                      })}
+                    </div>
+                  )
+                })}
+
+                {/* Current Time Indicator Line */}
+                {(() => {
+                  const position = getCurrentTimePosition();
+                  if (position !== null) {
+                    return (
+                      <div 
+                        className="absolute top-0 bottom-0 w-[2px] bg-red-500 z-30 pointer-events-none shadow-md"
+                        style={{ left: `${position}%` }}
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-b from-red-500 to-red-400/70" />
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Empty States */}
+        {filteredWorkers.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-64 text-center p-8">
+            <div className="bg-blue-50 rounded-full p-3 mb-2">
+              <User className="h-6 w-6 text-blue-500" />
+            </div>
+            <h3 className="text-lg font-medium text-gray-900">No workers match the filters</h3>
+            <p className="text-gray-500 mt-1 max-w-md">
+              Try adjusting your filters or adding more workers to see them here.
+            </p>
+          </div>
+        )}
+
+        {filteredWorkers.length > 0 && filteredJobs.length === 0 && (
+          <div className="border-t border-gray-200 mt-4 pt-4 text-center p-8">
+            <div className="bg-amber-50 rounded-full p-3 inline-block mb-2">
+              <Calendar className="h-6 w-6 text-amber-500" />
+            </div>
+            <h3 className="text-lg font-medium text-gray-900">No jobs to display</h3>
+            <p className="text-gray-500 mt-1 max-w-md mx-auto">
+              There are no jobs matching your current filters. Try adjusting your filters or add new jobs.
+            </p>
+          </div>
+        )}
+
+        {/* Job Details Modal */}
+        {showJobDetails && selectedJob && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+            <motion.div 
+              className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-auto"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+            >
+              <div className="flex items-center justify-between p-4 border-b border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900">Job Details</h3>
+                <button 
+                  onClick={() => setShowJobDetails(false)}
+                  className="text-gray-500 hover:text-gray-700 p-1"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              
+              <div className="p-6">
+                {/* Job Header */}
+                <div className="flex flex-col space-y-4">
+                  <div className="flex items-start justify-between">
+                    <h2 className="text-xl font-bold text-gray-900">{selectedJob.title}</h2>
+                    <span className={cn(
+                      "px-3 py-1 rounded-full text-xs font-medium",
+                      selectedJob.status === 'scheduled' ? "bg-blue-100 text-blue-800" :
+                      selectedJob.status === 'in_progress' ? "bg-yellow-100 text-yellow-800" :
+                      selectedJob.status === 'completed' ? "bg-green-100 text-green-800" :
+                      "bg-red-100 text-red-800"
+                    )}>
+                      {selectedJob.status.replace('_', ' ')}
+                    </span>
+                  </div>
                   
-                  {/* Location */}
-                  {selectedJob.location && (
+                  {selectedJob.description && (
+                    <p className="text-gray-600">{selectedJob.description}</p>
+                  )}
+                </div>
+                
+                {/* Job Details */}
+                <div className="mt-6 space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="flex items-center gap-2 bg-gray-50 p-3 rounded-lg">
-                      <MapPin className="h-5 w-5 text-red-500" />
+                      <User className="h-5 w-5 text-blue-500" />
                       <div>
-                        <div className="text-xs text-gray-500">Location</div>
-                        <div className="font-medium">{selectedJob.location}</div>
+                        <div className="text-xs text-gray-500">Client</div>
+                        <div className="font-medium">{selectedJob.client_name}</div>
                       </div>
                     </div>
+                    
+                    <div className="flex items-center gap-2 bg-gray-50 p-3 rounded-lg">
+                      <User className="h-5 w-5 text-indigo-500" />
+                      <div>
+                        <div className="text-xs text-gray-500">Assigned To</div>
+                        <div className="font-medium">{selectedJob.worker_name || 'Unassigned'}</div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-2 bg-gray-50 p-3 rounded-lg">
+                      <CalendarClock className="h-5 w-5 text-green-500" />
+                      <div>
+                        <div className="text-xs text-gray-500">Schedule</div>
+                        <div className="font-medium">
+                          {format(new Date(selectedJob.scheduled_at), 'MMM d, yyyy')} at {format(new Date(selectedJob.scheduled_at), 'h:mm a')}
+                        </div>
+                        <div className="text-sm text-gray-500">Duration: {selectedJob.duration_hours} hour{selectedJob.duration_hours !== 1 ? 's' : ''}</div>
+                      </div>
+                    </div>
+                    
+                    {selectedJob.location && (
+                      <div className="flex items-center gap-2 bg-gray-50 p-3 rounded-lg">
+                        <MapPin className="h-5 w-5 text-red-500" />
+                        <div>
+                          <div className="text-xs text-gray-500">Location</div>
+                          <div className="font-medium">{selectedJob.location}</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Action Buttons */}
+                <div className="mt-8 flex flex-wrap gap-3 border-t border-gray-200 pt-4">
+                  <button 
+                    onClick={() => {
+                      handleJobAction('editJob', selectedJob);
+                      setShowJobDetails(false);
+                    }}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                  >
+                    Edit Job
+                  </button>
+                  
+                  <button 
+                    onClick={() => {
+                      handleJobAction('smartReschedule', selectedJob);
+                      setShowJobDetails(false);
+                    }}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+                  >
+                    Reschedule
+                  </button>
+                  
+                  <button 
+                    onClick={() => {
+                      handleJobAction('assignWorker', selectedJob);
+                      setShowJobDetails(false);
+                    }}
+                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors"
+                  >
+                    Reassign Worker
+                  </button>
+                  
+                  {selectedJob.status !== 'completed' && (
+                    <button 
+                      onClick={() => {
+                        handleJobAction('markComplete', selectedJob);
+                        setShowJobDetails(false);
+                      }}
+                      className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+                    >
+                      Mark Complete
+                    </button>
+                  )}
+                  
+                  {selectedJob.status !== 'cancelled' && (
+                    <button 
+                      onClick={() => {
+                        handleJobAction('cancelJob', selectedJob);
+                        setShowJobDetails(false);
+                      }}
+                      className="px-4 py-2 border border-red-200 text-red-600 rounded-md hover:bg-red-50 transition-colors"
+                    >
+                      Cancel Job
+                    </button>
                   )}
                 </div>
               </div>
-              
-              {/* Action Buttons */}
-              <div className="mt-8 flex flex-wrap gap-3 border-t border-gray-200 pt-4">
-                <button 
-                  onClick={() => {
-                    handleJobAction('editJob', selectedJob);
-                    setShowJobDetails(false);
-                  }}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-                >
-                  Edit Job
-                </button>
-                
-                <button 
-                  onClick={() => {
-                    handleJobAction('smartReschedule', selectedJob);
-                    setShowJobDetails(false);
-                  }}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
-                >
-                  Reschedule
-                </button>
-                
-                <button 
-                  onClick={() => {
-                    handleJobAction('assignWorker', selectedJob);
-                    setShowJobDetails(false);
-                  }}
-                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors"
-                >
-                  Reassign Worker
-                </button>
-                
-                {selectedJob.status !== 'completed' && (
-                  <button 
-                    onClick={() => {
-                      handleJobAction('markComplete', selectedJob);
-                      setShowJobDetails(false);
-                    }}
-                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
-                  >
-                    Mark Complete
-                  </button>
-                )}
-                
-                {selectedJob.status !== 'cancelled' && (
-                  <button 
-                    onClick={() => {
-                      handleJobAction('cancelJob', selectedJob);
-                      setShowJobDetails(false);
-                    }}
-                    className="px-4 py-2 border border-red-200 text-red-600 rounded-md hover:bg-red-50 transition-colors"
-                  >
-                    Cancel Job
-                  </button>
-                )}
-              </div>
-            </div>
+            </motion.div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </TooltipProvider>
   )
 }) 
