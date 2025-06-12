@@ -14,7 +14,14 @@ export function generateDemoTimelineData(selectedDate: Date) {
       status: 'available',
       avatar: 'https://images.unsplash.com/photo-1494790108755-2616b612b043?w=150&h=150&fit=crop&crop=face',
       utilization: 85,
-      skills: ['HVAC', 'Electrical']
+      skills: ['HVAC', 'Electrical'],
+      working_hours: [
+        { start: '08:00', end: '16:00', day: 1 }, // Monday 
+        { start: '08:00', end: '16:00', day: 2 }, // Tuesday
+        { start: '08:00', end: '16:00', day: 3 }, // Wednesday
+        { start: '08:00', end: '16:00', day: 4 }, // Thursday
+        { start: '08:00', end: '16:00', day: 5 }  // Friday
+      ]
     },
     {
       id: 'worker-2',
@@ -23,7 +30,14 @@ export function generateDemoTimelineData(selectedDate: Date) {
       status: 'busy',
       avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
       utilization: 95,
-      skills: ['Plumbing', 'General Maintenance']
+      skills: ['Plumbing', 'General Maintenance'],
+      working_hours: [
+        { start: '07:00', end: '15:00', day: 1 }, // Monday 
+        { start: '07:00', end: '15:00', day: 2 }, // Tuesday
+        { start: '07:00', end: '15:00', day: 3 }, // Wednesday
+        { start: '07:00', end: '15:00', day: 4 }, // Thursday
+        { start: '07:00', end: '15:00', day: 5 }  // Friday
+      ]
     },
     {
       id: 'worker-3',
@@ -32,7 +46,14 @@ export function generateDemoTimelineData(selectedDate: Date) {
       status: 'available',
       avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&h=150&fit=crop&crop=face',
       utilization: 60,
-      skills: ['IT Support', 'Electrical']
+      skills: ['IT Support', 'Electrical'],
+      working_hours: [
+        { start: '09:00', end: '17:00', day: 1 }, // Monday 
+        { start: '09:00', end: '17:00', day: 2 }, // Tuesday
+        { start: '09:00', end: '17:00', day: 3 }, // Wednesday
+        { start: '09:00', end: '17:00', day: 4 }, // Thursday
+        { start: '09:00', end: '17:00', day: 5 }  // Friday
+      ]
     },
     {
       id: 'worker-4',
@@ -41,7 +62,14 @@ export function generateDemoTimelineData(selectedDate: Date) {
       status: 'available',
       avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face',
       utilization: 40,
-      skills: ['HVAC', 'General Maintenance']
+      skills: ['HVAC', 'General Maintenance'],
+      working_hours: [
+        { start: '10:00', end: '14:00', day: 1 }, // Monday (part-time)
+        { start: '10:00', end: '18:00', day: 2 }, // Tuesday
+        { start: '10:00', end: '14:00', day: 3 }, // Wednesday (part-time)
+        { start: '10:00', end: '18:00', day: 4 }, // Thursday
+        { start: '10:00', end: '14:00', day: 5 }  // Friday (part-time)
+      ]
     },
     {
       id: 'worker-5',
@@ -50,7 +78,8 @@ export function generateDemoTimelineData(selectedDate: Date) {
       status: 'offline',
       avatar: 'https://images.unsplash.com/photo-1544725176-7c40e5a71c5e?w=150&h=150&fit=crop&crop=face',
       utilization: 0,
-      skills: ['General Maintenance', 'IT Support']
+      skills: ['General Maintenance', 'IT Support'],
+      working_hours: []  // No working hours since worker is offline
     },
   ]
 

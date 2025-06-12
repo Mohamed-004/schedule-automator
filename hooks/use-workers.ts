@@ -7,6 +7,11 @@ export interface WorkerWithScheduleInfo extends DBWorker {
   utilization?: number
   totalHours?: number
   jobCount?: number
+  working_hours?: {
+    start: string // Format: "HH:MM"
+    end: string // Format: "HH:MM"
+    day?: number // 0-6
+  }[]
 }
 
 interface UseWorkersResult {
@@ -28,15 +33,95 @@ export function useWorkers(): UseWorkersResult {
       setLoading(true)
       setError(null)
 
+      // Fetch workers data
       const response = await fetch('/api/workers')
       if (!response.ok) {
         throw new Error(`Failed to fetch workers: ${response.statusText}`)
       }
 
-      const data = await response.json()
-      setWorkers(data)
+      const workersData = await response.json()
+      
+      // If we have worker data, also try to fetch their availability
+      if (workersData && Array.isArray(workersData) && workersData.length > 0) {
+        try {
+          // For each worker, try to fetch their availability
+          const workersWithAvailability = await Promise.all(
+            workersData.map(async (worker: WorkerWithScheduleInfo) => {
+              try {
+                // Try to fetch worker availability from the API
+                const availResponse = await fetch(`/api/workers/${worker.id}/availability`)
+                
+                if (availResponse.ok) {
+                  const availData = await availResponse.json()
+                  
+                  if (availData && Array.isArray(availData) && availData.length > 0) {
+                    // Map the availability data to working_hours format
+                    worker.working_hours = availData.map(slot => ({
+                      start: slot.start_time ? slot.start_time.substring(0, 5) : '09:00',
+                      end: slot.end_time ? slot.end_time.substring(0, 5) : '17:00',
+                      day: slot.day_of_week
+                    }))
+                  }
+                }
+                
+                // If no availability data was found or the request failed, provide defaults
+                if (!worker.working_hours || !Array.isArray(worker.working_hours) || worker.working_hours.length === 0) {
+                  // Default working hours - weekdays 9-5
+                  worker.working_hours = [
+                    { start: '09:00', end: '17:00', day: 1 }, // Monday
+                    { start: '09:00', end: '17:00', day: 2 }, // Tuesday
+                    { start: '09:00', end: '17:00', day: 3 }, // Wednesday
+                    { start: '09:00', end: '17:00', day: 4 }, // Thursday
+                    { start: '09:00', end: '17:00', day: 5 }  // Friday
+                  ]
+                }
+                
+                return worker
+              } catch (err) {
+                console.error(`Error fetching availability for worker ${worker.id}:`, err)
+                
+                // Provide default working hours if there was an error
+                worker.working_hours = [
+                  { start: '09:00', end: '17:00', day: 1 }, // Monday
+                  { start: '09:00', end: '17:00', day: 2 }, // Tuesday
+                  { start: '09:00', end: '17:00', day: 3 }, // Wednesday
+                  { start: '09:00', end: '17:00', day: 4 }, // Thursday
+                  { start: '09:00', end: '17:00', day: 5 }  // Friday
+                ]
+                
+                return worker
+              }
+            })
+          )
+          
+          setWorkers(workersWithAvailability)
+        } catch (err) {
+          console.error("Error processing worker availability:", err)
+          
+          // Still set the workers even if availability processing failed
+          const workersWithDefaults = workersData.map((worker: WorkerWithScheduleInfo) => {
+            if (!worker.working_hours || !Array.isArray(worker.working_hours) || worker.working_hours.length === 0) {
+              worker.working_hours = [
+                { start: '09:00', end: '17:00', day: 1 }, // Monday
+                { start: '09:00', end: '17:00', day: 2 }, // Tuesday
+                { start: '09:00', end: '17:00', day: 3 }, // Wednesday
+                { start: '09:00', end: '17:00', day: 4 }, // Thursday
+                { start: '09:00', end: '17:00', day: 5 }  // Friday
+              ]
+            }
+            return worker
+          })
+          
+          setWorkers(workersWithDefaults)
+        }
+      } else {
+        setWorkers(workersData)
+      }
     } catch (err) {
+      console.error("Error in useWorkers hook:", err)
       setError(err instanceof Error ? err : new Error('Unknown error occurred'))
+      // Return empty array instead of null to prevent further errors
+      setWorkers([])
     } finally {
       setLoading(false)
     }

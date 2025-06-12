@@ -38,13 +38,25 @@ export default function JobsPage() {
     : demoData.jobs
 
   const timelineWorkers: TimelineWorker[] = workers && workers.length > 0
-    ? workers.map(worker => ({
-        id: worker.id,
-        name: worker.name,
-        role: worker.role,
-        status: worker.status === 'active' ? 'available' as const : 'offline' as const,
-        utilization: worker.utilization,
-      }))
+    ? workers.map(worker => {
+        // Ensure worker has working hours
+        let workingHours = worker.working_hours || [
+          { start: '09:00', end: '17:00', day: 1 }, // Monday
+          { start: '09:00', end: '17:00', day: 2 }, // Tuesday
+          { start: '09:00', end: '17:00', day: 3 }, // Wednesday
+          { start: '09:00', end: '17:00', day: 4 }, // Thursday
+          { start: '09:00', end: '17:00', day: 5 }  // Friday
+        ];
+        
+        return {
+          id: worker.id,
+          name: worker.name,
+          role: worker.role,
+          status: worker.status === 'active' ? 'available' as const : 'offline' as const,
+          utilization: worker.utilization,
+          working_hours: workingHours
+        };
+      })
     : demoData.workers
 
   const handleCreateJob = () => {

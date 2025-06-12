@@ -9,10 +9,10 @@ export const revalidate = 0;
 export default async function WorkerSelfAvailabilityPage({ 
   params 
 }: { 
-  params: Promise<{ workerId: string }> 
+  params: { workerId: string } 
 }) {
   const supabase = await createClient();
-  const { workerId } = await params;
+  const { workerId } = params;
   
   console.log("Worker ID from params:", workerId);
 
