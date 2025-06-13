@@ -29,6 +29,7 @@ interface GridAlignedJobProps {
   hasConflict?: boolean
   className?: string
   style?: React.CSSProperties
+  timeRange?: { startHour: number; endHour: number; totalHours: number }
 }
 
 export function GridAlignedJob({ 
@@ -37,7 +38,8 @@ export function GridAlignedJob({
   onMove, 
   hasConflict = false,
   className,
-  style 
+  style,
+  timeRange 
 }: GridAlignedJobProps) {
   // Parse job timing
   const jobDate = new Date(job.scheduled_at)
@@ -45,8 +47,10 @@ export function GridAlignedJob({
   const jobMinute = jobDate.getMinutes()
   const jobDuration = job.duration || (job.duration_hours ? job.duration_hours * 60 : 60)
 
-  // Calculate grid-aligned position
-  const gridPosition = calculateGridPosition(jobHour, jobMinute, jobDuration)
+  // Calculate grid-aligned position with worker column offset
+  // Use default timeRange if not provided for backward compatibility
+  const defaultTimeRange = { startHour: 0, endHour: 23, totalHours: 24 }
+  const gridPosition = calculateGridPosition(jobHour, jobMinute, jobDuration, timeRange || defaultTimeRange, true)
   
   // Status styling
   const statusConfig = {
@@ -179,12 +183,13 @@ export function GridAlignedJob({
 
 // Compact version for smaller grids
 export function CompactGridAlignedJob(props: GridAlignedJobProps) {
-  const { job } = props
+  const { job, timeRange } = props
   const jobDate = new Date(job.scheduled_at)
   const jobHour = jobDate.getHours()
   const jobMinute = jobDate.getMinutes()
   const jobDuration = job.duration || (job.duration_hours ? job.duration_hours * 60 : 60)
-  const gridPosition = calculateGridPosition(jobHour, jobMinute, jobDuration)
+  const defaultTimeRange = { startHour: 0, endHour: 23, totalHours: 24 }
+  const gridPosition = calculateGridPosition(jobHour, jobMinute, jobDuration, timeRange || defaultTimeRange, true)
 
   const statusColors = {
     pending: 'bg-yellow-400',

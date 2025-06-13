@@ -1,427 +1,381 @@
+/**
+ * Enhanced Worker Availability Hook - Database-First Approach
+ * Provides unified data processing for both UI display and green availability blocks
+ * No default fallbacks - shows actual database state only
+ */
+
 'use client'
 
-import { useState, useEffect } from 'react'
-import { 
-  WeeklyAvailability, 
-  AvailabilityException, 
-  AvailabilitySlot,
-  AvailabilityExceptionInput
-} from '@/lib/types'
-import { useSupabase } from '@/lib/SupabaseProvider'
-import { useToast } from '@/components/ui/use-toast'
+import { useMemo } from 'react'
+import { TimeRange } from '@/lib/timeline-grid'
 
-export function useWorkerAvailability(workerId: string) {
-  const { supabase } = useSupabase()
-  const [weeklyAvailability, setWeeklyAvailability] = useState<AvailabilitySlot[]>([]);
-  const [exceptions, setExceptions] = useState<AvailabilityException[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<any | null>(null);
-  const { toast } = useToast();
+// Standardized worker shift interface
+export interface WorkerShift {
+  start: string // "HH:MM" format
+  end: string   // "HH:MM" format
+  day?: number | string  // 0-6 (Sunday-Saturday) or day name string
+  isActive?: boolean
+}
 
-  // Load data
-  useEffect(() => {
-    if (!workerId || !supabase) return;
-    loadAvailability();
-  }, [workerId, supabase]);
+// Standardized worker interface
+export interface StandardizedWorker {
+  id: string
+  name: string
+  email?: string
+  status: 'available' | 'busy' | 'offline' | 'unavailable'
+  working_hours: WorkerShift[]
+}
 
-  const loadAvailability = async () => {
-    if (!supabase) {
-      console.error('❌ Supabase client not available');
-      return;
+// Input worker interface (matches existing data structure)
+interface InputWorker {
+  id: string
+  name: string
+  email?: string
+  status?: 'available' | 'busy' | 'offline'
+  working_hours?: Array<{
+    start: string
+    end: string
+    day?: number | string
+  }>
+}
+
+// Availability configuration
+interface AvailabilityConfig {
+  bg: string
+  border: string
+  text: string
+  opacity: number
+}
+
+interface ProcessedAvailability {
+  status: 'available' | 'busy' | 'offline' | 'unavailable'
+  displayText: string
+  hasAvailability: boolean
+  shifts: Array<WorkerShift & {
+    startHour: number
+    startMinute: number
+    endHour: number
+    endMinute: number
+    durationMinutes: number
+    isValid: boolean
+  }>
+  timeRange?: string
+}
+
+const AVAILABILITY_CONFIGS: Record<string, AvailabilityConfig> = {
+  available: { 
+    bg: 'bg-green-100', 
+    border: 'border-green-300', 
+    text: 'text-green-700', 
+    opacity: 0.6 
+  },
+  busy: { 
+    bg: 'bg-yellow-100', 
+    border: 'border-yellow-300', 
+    text: 'text-yellow-700', 
+    opacity: 0.4 
+  },
+  offline: { 
+    bg: 'bg-red-100', 
+    border: 'border-red-300', 
+    text: 'text-red-700', 
+    opacity: 0.3 
+  },
+  unavailable: { 
+    bg: 'bg-gray-100', 
+    border: 'border-gray-300', 
+    text: 'text-gray-500', 
+    opacity: 0.2 
+  }
+}
+
+/**
+ * Determines worker status based on actual data availability
+ */
+function determineWorkerStatus(worker: InputWorker, selectedDate: Date): 'available' | 'busy' | 'offline' | 'unavailable' {
+  // If explicitly marked as offline, respect that
+  if (worker.status === 'offline') {
+    return 'offline'
+  }
+  
+  // If no working hours data exists, worker is offline
+  if (!worker.working_hours || worker.working_hours.length === 0) {
+    return 'offline'
+  }
+  
+  // Check if worker has shifts for the selected date
+  const dayOfWeek = selectedDate.getDay()
+  const hasShiftsForDate = worker.working_hours.some(shift => 
+    matchesDayOfWeek(shift.day, dayOfWeek)
+  )
+  
+  if (hasShiftsForDate) {
+    // Use original status if available for this date, default to available
+    return worker.status === 'busy' ? 'busy' : 'available'
+  }
+  
+  // Has working hours but not for this specific date
+  return 'unavailable'
+}
+
+/**
+ * Processes worker availability data for unified consumption
+ */
+function processWorkerAvailabilityForDate(worker: InputWorker, selectedDate: Date): ProcessedAvailability {
+  const status = determineWorkerStatus(worker, selectedDate)
+  
+  // Handle offline/unavailable states
+  if (status === 'offline') {
+    return {
+      status: 'offline',
+      displayText: 'Not Scheduled',
+      hasAvailability: false,
+      shifts: [],
+      timeRange: undefined
     }
-
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      console.log('🔄 Loading availability for worker:', workerId);
-
-      // Fetch weekly availability
-      const { data: weeklyData, error: weeklyError } = await supabase
-        .from('worker_weekly_availability')
-        .select('*')
-        .eq('worker_id', workerId);
-
-      console.log('📊 Weekly availability query result:', { weeklyData, weeklyError });
-
-      if (weeklyError) throw weeklyError;
-
-      // Fetch exceptions
-      const { data: exceptionData, error: exceptionError } = await supabase
-        .from('worker_availability_exceptions')
-        .select('*')
-        .eq('worker_id', workerId);
-
-      console.log('📊 Exceptions query result:', { exceptionData, exceptionError });
-
-      if (exceptionError) throw exceptionError;
-
-      // Transform data for UI
-      setWeeklyAvailability(
-        (weeklyData || []).map((item: WeeklyAvailability) => ({
-          id: item.id,
-          day: item.day_of_week,
-          start: item.start_time.substring(0, 5), // HH:MM
-          end: item.end_time.substring(0, 5), // HH:MM
-        }))
-      );
-
-      // Transform exceptions to match the expected format if necessary
-      const loadedExceptions = (exceptionData || []).map((ex: any) => ({
-        id: ex.id,
-        worker_id: ex.worker_id,
-        date: ex.date,
-        is_available: ex.is_available,
-        start_time: ex.start_time,
-        end_time: ex.end_time,
-        reason: ex.reason,
-        created_at: ex.created_at,
-        updated_at: ex.updated_at,
-      }));
-      setExceptions(loadedExceptions);
-
-      console.log('✅ Availability loaded successfully');
-    } catch (err) {
-      console.error('❌ Error loading availability:', err);
-      setError(err instanceof Error ? err : new Error('Failed to load availability'));
-      toast({
-        title: 'Error',
-        description: 'Failed to load availability data',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
+  }
+  
+  if (status === 'unavailable') {
+    return {
+      status: 'unavailable',
+      displayText: 'Not Available Today',
+      hasAvailability: false,
+      shifts: [],
+      timeRange: undefined
     }
-  };
-
-  // Save weekly availability
-  const saveWeeklyAvailability = async (slots: AvailabilitySlot[]) => {
-    if (!supabase) {
-      console.error('❌ Supabase client not available');
-      toast({
-        title: 'Error',
-        description: 'Database connection not available',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (!workerId) {
-      toast({
-        title: 'Error',
-        description: 'Worker ID is required',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      console.log('📊 Starting save operation...');
-      console.log('Worker ID:', workerId);
-      console.log('Slots to save:', slots);
-
-      // Check current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      console.log('🔐 Current user:', user?.email, 'Error:', userError);
-
-      if (userError || !user) {
-        throw new Error('Authentication required. Please sign in to save availability.');
-      }
-
-      // Validate slots
-      for (const slot of slots) {
-        if (!slot.start || !slot.end || slot.start >= slot.end) {
-          throw new Error(`Invalid time range for ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][slot.day]}: ${slot.start} to ${slot.end}`);
-        }
-      }
-
-      console.log('✅ Slot validation passed');
-
-      // First delete all existing slots
-      console.log('🗑️ Deleting existing slots...');
-      const { error: deleteError } = await supabase
-        .from('worker_weekly_availability')
-        .delete()
-        .eq('worker_id', workerId);
-      
-      if (deleteError) {
-        console.error('❌ Delete operation failed:', deleteError);
-        throw deleteError;
-      }
-      
-      let savedSlots: AvailabilitySlot[] = [];
-      // Insert new slots and get the saved data back
-      if (slots.length > 0) {
-        console.log('📝 Inserting new slots...');
-        const newSlots = slots.map(slot => ({
-          worker_id: workerId,
-          day_of_week: slot.day,
-          start_time: slot.start,
-          end_time: slot.end,
-        }));
-        
-        const { data: insertData, error: insertError } = await supabase
-          .from('worker_weekly_availability')
-          .insert(newSlots)
-          .select();
-        
-        if (insertError) {
-          console.error('❌ Insert operation failed:', insertError);
-          throw insertError;
-        }
-        
-        // Transform the returned data to update the local state
-        savedSlots = (insertData || []).map((item: WeeklyAvailability) => ({
-            id: item.id,
-            day: item.day_of_week,
-            start: item.start_time.substring(0, 5),
-            end: item.end_time.substring(0, 5),
-        }));
-      }
-      
-      // Update local state directly instead of reloading
-      setWeeklyAvailability(savedSlots);
-      
-      toast({
-        title: 'Success! 🎉',
-        description: `Weekly availability saved successfully. ${slots.length} time slots configured.`,
-        variant: 'success',
-      });
-
-    } catch (err) {
-      console.error('❌ Error saving weekly availability:', err);
-      console.error('Error type:', typeof err);
-      console.error('Error details:', JSON.stringify(err, null, 2));
-      console.error('Worker ID:', workerId);
-      console.error('Slots being saved:', slots);
-      
-      let errorMessage = 'Failed to save weekly availability';
-      
-      // Handle Supabase-specific errors
-      if (err && typeof err === 'object') {
-        if ('message' in err) {
-          errorMessage = err.message as string;
-        } else if ('error' in err) {
-          errorMessage = (err as any).error;
-        } else if ('code' in err) {
-          errorMessage = `Database error (${(err as any).code}): ${(err as any).message || 'Unknown error'}`;
-        } else {
-          errorMessage = `Database operation failed: ${JSON.stringify(err)}`;
-        }
-      } else if (err instanceof Error) {
-        errorMessage = err.message;
-      }
-      
-      const error = new Error(errorMessage);
-      setError(error);
-      
-      toast({
-        title: 'Failed to Save ❌',
-        description: errorMessage,
-        variant: 'destructive',
-      });
-      
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Save an exception
-  const saveException = async (exception: AvailabilityExceptionInput) => {
-    if (!supabase) {
-      console.error('❌ Supabase client not available');
-      toast({
-        title: 'Error',
-        description: 'Database connection not available',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (!workerId) {
-      toast({
-        title: 'Error',
-        description: 'Worker ID is required',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    // Validate the exception data
-    if (!exception.date) {
-      toast({
-        title: 'Error',
-        description: 'Date is required for the exception',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (!exception.allDay && (!exception.startTime || !exception.endTime)) {
-      toast({
-        title: 'Error',
-        description: 'Start and end times are required for timed exceptions',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (!exception.allDay && exception.startTime && exception.endTime && exception.startTime >= exception.endTime) {
-      toast({
-        title: 'Error',
-        description: 'End time must be after start time',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      const exceptionData = {
-        worker_id: workerId,
-        date: exception.date,
-        is_available: exception.isAvailable,
-        start_time: exception.allDay ? null : exception.startTime,
-        end_time: exception.allDay ? null : exception.endTime,
-        reason: exception.reason,
-      };
-      
-      const { data: savedException, error } = await (exception.id
-        ? supabase
-          .from('worker_availability_exceptions')
-          .update(exceptionData)
-          .eq('id', exception.id)
-          .select()
-          .single()
-        : supabase
-          .from('worker_availability_exceptions')
-          .insert(exceptionData)
-          .select()
-          .single());
-          
-      if (error) throw error;
-      
-      // Update local state directly
-      const newOrUpdatedException: AvailabilityException = {
-        id: savedException.id,
-        date: savedException.date,
-        is_available: savedException.is_available,
-        start_time: savedException.start_time,
-        end_time: savedException.end_time,
-        reason: savedException.reason,
-        worker_id: savedException.worker_id,
-        created_at: savedException.created_at,
-        updated_at: savedException.updated_at,
-      };
-
-      if (exception.id) {
-        setExceptions(prev => prev.map(e => e.id === exception.id ? newOrUpdatedException : e));
-      } else {
-        setExceptions(prev => [...prev, newOrUpdatedException]);
-      }
-      
-      const formattedDate = new Date(savedException.date).toLocaleDateString();
-      const actionType = exception.id ? 'updated' : 'created';
-      const exceptionType = savedException.is_available ? 'special availability' : 'time off';
-      
-      toast({
-        title: `Success! 🎉`,
-        description: `${exceptionType.charAt(0).toUpperCase() + exceptionType.slice(1)} ${actionType} for ${formattedDate}`,
-        variant: 'success',
-      });
-
-      // No longer reloading all data from the server
-      return savedException;
-    } catch (err) {
-      console.error('Error saving exception:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to save exception';
-      setError(err instanceof Error ? err : new Error(errorMessage));
-      toast({
-        title: 'Failed to Save ❌',
-        description: errorMessage,
-        variant: 'destructive',
-      });
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Delete an exception
-  const deleteException = async (exceptionId: string) => {
-    if (!supabase) {
-      console.error('❌ Supabase client not available');
-      toast({
-        title: 'Error',
-        description: 'Database connection not available',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (!exceptionId) {
-      toast({
-        title: 'Error',
-        description: 'Exception ID is required',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      // Find the exception being deleted for better user feedback
-      const exceptionToDelete = exceptions.find(e => e.id === exceptionId);
-      
-      const { error } = await supabase
-        .from('worker_availability_exceptions')
-        .delete()
-        .eq('id', exceptionId);
-        
-      if (error) throw error;
-      
-      // Update local state directly
-      setExceptions(prev => prev.filter(e => e.id !== exceptionId));
-      
-      const formattedDate = exceptionToDelete ? new Date(exceptionToDelete.date).toLocaleDateString() : 'selected date';
-      
-      toast({
-        title: 'Deleted! 🗑️',
-        description: `Exception for ${formattedDate} has been removed from your schedule`,
-        variant: 'success',
-      });
-
-    } catch (err) {
-      console.error('Error deleting exception:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to delete exception';
-      setError(err instanceof Error ? err : new Error(errorMessage));
-      toast({
-        title: 'Failed to Delete ❌',
-        description: errorMessage,
-        variant: 'destructive',
-      });
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
+  }
+  
+  // Process shifts for available/busy workers
+  const standardizedWorker = standardizeWorker(worker)
+  const shiftsForDate = getShiftsForDate(standardizedWorker, selectedDate)
+  
+  const validShifts = shiftsForDate
+    .map(shift => ({
+      shift,
+      validation: validateShift(shift)
+    }))
+    .filter(({ validation }) => validation.isValid)
+    .map(({ shift, validation }) => ({
+      ...shift,
+      ...validation
+    }))
+  
+  // Generate display text from actual shifts
+  let displayText = 'Not Scheduled'
+  let timeRange = undefined
+  
+  if (validShifts.length > 0) {
+    const firstShift = validShifts[0]
+    const startTime = formatTime(firstShift.start)
+    const endTime = formatTime(firstShift.end)
+    displayText = `${startTime} - ${endTime}`
+    timeRange = `${firstShift.start}-${firstShift.end}`
+  }
+  
   return {
-    weeklyAvailability,
-    exceptions,
-    isLoading,
-    error,
-    loadAvailability,
-    saveWeeklyAvailability,
-    saveException,
-    deleteException,
-  };
-} 
+    status,
+    displayText,
+    hasAvailability: validShifts.length > 0,
+    shifts: validShifts,
+    timeRange
+  }
+}
+
+/**
+ * Standardizes worker data structure - NO DEFAULT FALLBACKS
+ */
+function standardizeWorker(worker: InputWorker): StandardizedWorker {
+  const status = worker.status || 'available'
+  
+  // NO DEFAULT WORKING HOURS - use only actual data
+  let working_hours: WorkerShift[] = []
+  
+  if (worker.working_hours && worker.working_hours.length > 0) {
+    working_hours = worker.working_hours.map(shift => ({
+      start: shift.start,
+      end: shift.end,
+      day: shift.day,
+      isActive: true
+    }))
+  }
+  // If no working_hours, leave empty array (no fallbacks)
+  
+  return {
+    id: worker.id,
+    name: worker.name,
+    email: worker.email,
+    status,
+    working_hours
+  }
+}
+
+/**
+ * Matches day-of-week with proper fallback handling
+ */
+function matchesDayOfWeek(shiftDay: number | string | undefined, targetDay: number): boolean {
+  if (shiftDay === undefined || shiftDay === null) {
+    return true // No day restriction means applies to all days
+  }
+  
+  if (typeof shiftDay === 'number') {
+    return shiftDay === targetDay
+  }
+  
+  if (typeof shiftDay === 'string') {
+    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+    const targetDayName = dayNames[targetDay]
+    return shiftDay.toLowerCase() === targetDayName
+  }
+  
+  return false
+}
+
+/**
+ * Filters shifts for a specific date
+ */
+function getShiftsForDate(worker: StandardizedWorker, selectedDate: Date): WorkerShift[] {
+  const dayOfWeek = selectedDate.getDay() // 0 = Sunday, 6 = Saturday
+  
+  const relevantShifts = worker.working_hours.filter(shift => 
+    matchesDayOfWeek(shift.day, dayOfWeek)
+  )
+  
+  return relevantShifts
+}
+
+/**
+ * Validates shift time format and calculates duration
+ */
+function validateShift(shift: WorkerShift): {
+  isValid: boolean
+  startHour: number
+  startMinute: number
+  endHour: number
+  endMinute: number
+  durationMinutes: number
+} {
+  const startParts = shift.start.split(':')
+  const endParts = shift.end.split(':')
+  
+  if (startParts.length !== 2 || endParts.length !== 2) {
+    return { 
+      isValid: false, 
+      startHour: 0, 
+      startMinute: 0, 
+      endHour: 0, 
+      endMinute: 0, 
+      durationMinutes: 0 
+    }
+  }
+  
+  const [startHour, startMinute] = startParts.map(Number)
+  const [endHour, endMinute] = endParts.map(Number)
+  
+  if (isNaN(startHour) || isNaN(startMinute) || isNaN(endHour) || isNaN(endMinute)) {
+    return { 
+      isValid: false, 
+      startHour: 0, 
+      startMinute: 0, 
+      endHour: 0, 
+      endMinute: 0, 
+      durationMinutes: 0 
+    }
+  }
+  
+  const durationMinutes = (endHour * 60 + endMinute) - (startHour * 60 + startMinute)
+  
+  return {
+    isValid: durationMinutes > 0,
+    startHour,
+    startMinute,
+    endHour,
+    endMinute,
+    durationMinutes
+  }
+}
+
+/**
+ * Format time from HH:MM to readable format
+ */
+function formatTime(timeStr: string): string {
+  const [hours, minutes] = timeStr.split(':').map(Number)
+  const period = hours >= 12 ? 'PM' : 'AM'
+  const hour12 = hours % 12 || 12
+  return `${hour12}:${minutes.toString().padStart(2, '0')} ${period}`
+}
+
+/**
+ * Main hook for worker availability - Database-First Approach
+ */
+export function useWorkerAvailability(inputWorker: InputWorker, selectedDate: Date) {
+  return useMemo(() => {
+    // Process worker data with intelligent status determination
+    const processed = processWorkerAvailabilityForDate(inputWorker, selectedDate)
+    
+    // Get availability configuration
+    const config = AVAILABILITY_CONFIGS[processed.status] || AVAILABILITY_CONFIGS.offline
+    
+    return {
+      worker: {
+        ...inputWorker,
+        status: processed.status
+      },
+      shifts: processed.shifts,
+      config,
+      hasShifts: processed.hasAvailability,
+      isAvailable: processed.status === 'available' && processed.hasAvailability,
+      displayText: processed.displayText,
+      timeRange: processed.timeRange
+    }
+  }, [inputWorker, selectedDate])
+}
+
+/**
+ * Hook for multiple workers
+ */
+export function useMultipleWorkerAvailability(
+  workers: InputWorker[], 
+  selectedDate: Date
+) {
+  return useMemo(() => {
+    return workers.map(worker => ({
+      workerId: worker.id,
+      ...useWorkerAvailability(worker, selectedDate)
+    }))
+  }, [workers, selectedDate])
+}
+
+/**
+ * Hook for calculating worker utilization
+ */
+export function useWorkerUtilization(
+  worker: InputWorker,
+  jobs: Array<{ duration: number | undefined; duration_hours?: number }>,
+  selectedDate: Date
+) {
+  const { shifts } = useWorkerAvailability(worker, selectedDate)
+  
+  return useMemo(() => {
+    // Calculate total available minutes
+    const totalAvailableMinutes = shifts.reduce((total, shift) => {
+      return total + shift.durationMinutes
+    }, 0)
+    
+    if (totalAvailableMinutes === 0) return 0
+    
+    // Calculate total job minutes
+    const totalJobMinutes = jobs.reduce((total, job) => {
+      const duration = job.duration || (job.duration_hours ? job.duration_hours * 60 : 0)
+      return total + duration
+    }, 0)
+    
+    // Calculate utilization percentage
+    const utilization = (totalJobMinutes / totalAvailableMinutes) * 100
+    return Math.min(100, Math.max(0, utilization))
+  }, [shifts, jobs])
+}
+
+/**
+ * Export types for external use
+ */
+export type { AvailabilityConfig, ProcessedAvailability } 

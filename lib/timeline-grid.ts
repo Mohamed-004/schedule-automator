@@ -24,6 +24,13 @@ export const GRID_CONFIG = {
   JOB_CARD_MARGIN: 4,
   JOB_CARD_MIN_WIDTH: 60, // Minimum width for 30min jobs
   
+  // Worker column widths - unified across all components
+  WORKER_COLUMN_WIDTH: {
+    MOBILE: 128,    // w-32 (32 * 4px = 128px)
+    TABLET: 160,    // sm:w-40 (40 * 4px = 160px)  
+    DESKTOP: 192    // lg:w-48 (48 * 4px = 192px)
+  },
+  
   // Business hours highlighting
   BUSINESS_START: 9,     // 9 AM
   BUSINESS_END: 17,      // 5 PM
@@ -142,12 +149,27 @@ export function calculateOptimalTimeRange(
 
 /**
  * Converts time (hour, minute) to pixel position on the grid
+ * Now includes optional worker column offset for proper alignment
  */
-export function timeToPixels(hour: number, minute: number, timeRange?: TimeRange): number {
+export function timeToPixels(
+  hour: number, 
+  minute: number, 
+  timeRange?: TimeRange, 
+  includeWorkerOffset = false,
+  workerColumnWidth?: number
+): number {
   const startHour = timeRange?.startHour || 0
   const adjustedHour = hour - startHour
   const totalMinutes = (adjustedHour * 60) + minute
-  return totalMinutes * GRID_CONFIG.MINUTE_WIDTH
+  let pixelPosition = totalMinutes * GRID_CONFIG.MINUTE_WIDTH
+  
+  // Add worker column offset if requested
+  if (includeWorkerOffset) {
+    const offsetWidth = workerColumnWidth || GRID_CONFIG.WORKER_COLUMN_WIDTH.TABLET
+    pixelPosition += offsetWidth
+  }
+  
+  return pixelPosition
 }
 
 /**
@@ -179,13 +201,40 @@ export function snapToGrid(hour: number, minute: number): { hour: number; minute
 
 /**
  * Calculates grid position for a job or availability block
+ * Enhanced with dynamic worker column offset for perfect timeline alignment
+ * Includes robust data validation for missing/invalid data
  */
 export function calculateGridPosition(
   startHour: number, 
   startMinute: number, 
   durationMinutes: number,
-  timeRange?: TimeRange
+  timeRange: TimeRange,
+  includeWorkerOffset = true,
+  workerColumnWidth?: number // New parameter for dynamic width
 ): GridPosition {
+  // Validate input data existence
+  if (startHour === undefined || startHour === null || isNaN(startHour)) {
+    throw new Error('Invalid startHour provided to calculateGridPosition')
+  }
+  
+  if (startMinute === undefined || startMinute === null || isNaN(startMinute)) {
+    throw new Error('Invalid startMinute provided to calculateGridPosition')
+  }
+  
+  if (durationMinutes === undefined || durationMinutes === null || isNaN(durationMinutes) || durationMinutes <= 0) {
+    throw new Error('Invalid durationMinutes provided to calculateGridPosition')
+  }
+  
+  // Ensure timeRange is provided for proper positioning
+  if (!timeRange) {
+    throw new Error('TimeRange is required for accurate grid positioning')
+  }
+  
+  // Validate timeRange structure
+  if (typeof timeRange.startHour !== 'number' || typeof timeRange.endHour !== 'number') {
+    throw new Error('Invalid TimeRange structure provided to calculateGridPosition')
+  }
+  
   // Snap start time to grid
   const snappedStart = snapToGrid(startHour, startMinute)
   
@@ -195,7 +244,14 @@ export function calculateGridPosition(
     Math.ceil(durationMinutes / GRID_CONFIG.MINUTES_PER_BLOCK) * GRID_CONFIG.MINUTES_PER_BLOCK
   )
   
-  const left = timeToPixels(snappedStart.hour, snappedStart.minute, timeRange)
+  // Calculate base position
+  const baseLeft = timeToPixels(snappedStart.hour, snappedStart.minute, timeRange)
+  
+  // Add worker column offset for proper alignment with time grid
+  // Use provided width or fall back to tablet width for backward compatibility
+  const offsetWidth = workerColumnWidth || GRID_CONFIG.WORKER_COLUMN_WIDTH.TABLET
+  const left = includeWorkerOffset ? baseLeft + offsetWidth : baseLeft
+  
   const width = Math.max(
     GRID_CONFIG.JOB_CARD_MIN_WIDTH,
     snappedDuration * GRID_CONFIG.MINUTE_WIDTH

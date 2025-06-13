@@ -1,33 +1,37 @@
 import React from 'react'
 import { cn } from '@/lib/utils'
 import { 
-  calculateGridPosition, 
   formatGridTime,
   GRID_CONFIG,
   TimeRange
 } from '@/lib/timeline-grid'
+import { 
+  useWorkerAvailability,
+  StandardizedWorker,
+  WorkerShift
+} from '@/hooks/use-worker-availability'
+import { useTimelineCoordinates } from '@/hooks/use-timeline-coordinates'
 
-interface WorkerShift {
-  start: string // "HH:MM" format
-  end: string   // "HH:MM" format
-  day?: number  // 0-6 (Sunday-Saturday)
-  isActive?: boolean
-}
-
-interface Worker {
+// Input worker interface (matches existing data structure)
+interface InputWorker {
   id: string
   name: string
-  status: 'available' | 'busy' | 'offline'
-  working_hours?: WorkerShift[]
+  email?: string
+  status?: 'available' | 'busy' | 'offline'
+  working_hours?: Array<{
+    start: string
+    end: string
+    day?: number | string
+  }>
 }
 
 interface GridAlignedAvailabilityProps {
-  worker: Worker
+  worker: InputWorker
   selectedDate: Date
   className?: string
   showTimeLabels?: boolean
   opacity?: number
-  timeRange?: TimeRange
+  timeRange: TimeRange
 }
 
 export function GridAlignedAvailability({ 
@@ -38,100 +42,76 @@ export function GridAlignedAvailability({
   opacity = 0.3,
   timeRange
 }: GridAlignedAvailabilityProps) {
-  // Get worker's schedule for the selected date
-  const dayOfWeek = selectedDate.getDay()
-  const relevantShifts = worker.working_hours?.filter(shift => 
-    shift.day === undefined || shift.day === dayOfWeek
-  ) || []
+  const { shifts, config, hasShifts, worker: processedWorker } = useWorkerAvailability(worker, selectedDate)
+  const coordinates = useTimelineCoordinates(timeRange)
 
-  // Default shift if no specific schedule
-  const defaultShift = { start: '09:00', end: '17:00' }
-  const shifts = relevantShifts.length > 0 ? relevantShifts : [defaultShift]
+  // Early return - only render if worker has actual availability data
+  if (!hasShifts || shifts.length === 0) {
+    return null
+  }
 
-  // Light green background for all worker availability
-  const availabilityConfig = {
-    bg: 'bg-green-100',
-    border: 'border-green-200',
-    text: 'text-green-700'
+  // Early return if worker is offline or unavailable
+  if (processedWorker.status === 'offline' || processedWorker.status === 'unavailable') {
+    return null
   }
 
   return (
     <div className="absolute inset-0">
       {shifts.map((shift, index) => {
-        // Parse shift times
-        const [startHour, startMinute] = shift.start.split(':').map(Number)
-        const [endHour, endMinute] = shift.end.split(':').map(Number)
-        
-        // Calculate duration in minutes
-        const startTotalMinutes = startHour * 60 + startMinute
-        const endTotalMinutes = endHour * 60 + endMinute
-        const durationMinutes = endTotalMinutes - startTotalMinutes
+        // Use unified coordinate system for precise positioning
+        const position = coordinates.getAvailabilityPosition(
+          shift.startHour, 
+          shift.startMinute, 
+          shift.durationMinutes
+        )
 
-        // Skip invalid shifts
-        if (durationMinutes <= 0) return null
-
-        // Calculate grid-aligned position with timeRange
-        const gridPosition = calculateGridPosition(startHour, startMinute, durationMinutes, timeRange)
+        // Development mode alignment validation
+        if (process.env.NODE_ENV === 'development' && coordinates.validateAlignment) {
+          const expectedTimePosition = coordinates.getTimePosition(shift.startHour, shift.startMinute)
+          coordinates.validateAlignment('AvailabilityBlock', expectedTimePosition, position.left)
+        }
 
         return (
           <div key={index} className="relative">
-            {/* Main availability block */}
             <div
-              className={cn(
-                "absolute top-0 bottom-0 border-2 rounded-sm",
-                "bg-green-100 border-green-300",
-                className
-              )}
-              style={{
-                left: gridPosition.left,
-                width: gridPosition.width,
-                opacity: opacity || 0.6
+              className={cn("absolute top-0 bottom-0 border-2 rounded-sm", config.bg, config.border, className)}
+              style={{ 
+                left: position.left, 
+                width: position.width, 
+                opacity: opacity || config.opacity 
               }}
             />
-
-            {/* Time labels (optional) */}
             {showTimeLabels && (
               <>
-                {/* Start time label */}
                 <div
-                  className={cn(
-                    "absolute top-1 text-xs font-medium px-1 py-0.5 rounded",
-                    availabilityConfig.text,
-                    "bg-white/80 border border-current/20"
-                  )}
-                  style={{ left: gridPosition.left + 2 }}
+                  className={cn("absolute top-1 text-xs font-medium px-1 py-0.5 rounded", config.text, "bg-white/80 border border-current/20")}
+                  style={{ left: position.left + 2 }}
                 >
-                  {formatGridTime(gridPosition.hour, gridPosition.minute)}
+                  {formatGridTime(shift.startHour, shift.startMinute)}
                 </div>
-
-                {/* End time label */}
                 <div
-                  className={cn(
-                    "absolute bottom-1 text-xs font-medium px-1 py-0.5 rounded",
-                    availabilityConfig.text,
-                    "bg-white/80 border border-current/20"
-                  )}
-                  style={{ 
-                    right: `calc(100% - ${gridPosition.left + gridPosition.width - 2}px)` 
-                  }}
+                  className={cn("absolute bottom-1 text-xs font-medium px-1 py-0.5 rounded", config.text, "bg-white/80 border border-current/20")}
+                  style={{ right: `calc(100% - ${position.left + position.width - 2}px)` }}
                 >
-                  {(() => {
-                    const endHour = Math.floor((gridPosition.hour * 60 + gridPosition.minute + gridPosition.duration) / 60)
-                    const endMinute = (gridPosition.hour * 60 + gridPosition.minute + gridPosition.duration) % 60
-                    return formatGridTime(endHour, endMinute)
-                  })()}
+                  {formatGridTime(shift.endHour, shift.endMinute)}
                 </div>
               </>
             )}
-
-            {/* Status indicator */}
             <div
-              className={cn(
-                "absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full border border-white shadow-sm",
-                "bg-green-500"
-              )}
-              style={{ left: gridPosition.left + gridPosition.width / 2 - 4 }}
+              className={cn("absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full border border-white shadow-sm", 
+                processedWorker.status === 'available' ? "bg-green-500" : 
+                processedWorker.status === 'busy' ? "bg-yellow-500" : "bg-gray-400")}
+              style={{ left: position.left + position.width / 2 - 4 }}
             />
+            
+            {/* Development mode position indicator */}
+            {process.env.NODE_ENV === 'development' && (
+              <div 
+                className="absolute top-0 w-1 h-2 bg-blue-500 opacity-75"
+                style={{ left: position.left }}
+                title={`${shift.startHour}:${shift.startMinute.toString().padStart(2, '0')} @ ${position.left}px`}
+              />
+            )}
           </div>
         )
       })}
@@ -139,49 +119,47 @@ export function GridAlignedAvailability({
   )
 }
 
-// Compact version for smaller displays
 export function CompactGridAlignedAvailability({ 
   worker, 
   selectedDate,
-  className 
-}: Omit<GridAlignedAvailabilityProps, 'showTimeLabels' | 'opacity'>) {
-  const dayOfWeek = selectedDate.getDay()
-  const relevantShifts = worker.working_hours?.filter(shift => 
-    shift.day === undefined || shift.day === dayOfWeek
-  ) || []
+  className,
+  timeRange
+}: Omit<GridAlignedAvailabilityProps, 'showTimeLabels' | 'opacity'> & { timeRange: TimeRange }) {
+  const { shifts, hasShifts, worker: processedWorker } = useWorkerAvailability(worker, selectedDate)
+  const coordinates = useTimelineCoordinates(timeRange)
+  
+  // Early return - only render if worker has actual availability data
+  if (!hasShifts || shifts.length === 0) {
+    return null
+  }
 
-  const defaultShift = { start: '09:00', end: '17:00' }
-  const shifts = relevantShifts.length > 0 ? relevantShifts : [defaultShift]
+  // Early return if worker is offline or unavailable
+  if (processedWorker.status === 'offline' || processedWorker.status === 'unavailable') {
+    return null
+  }
 
   const statusColors = {
     available: 'bg-green-300/60',
     busy: 'bg-yellow-300/60',
-    offline: 'bg-gray-300/60'
+    offline: 'bg-red-300/60',
+    unavailable: 'bg-gray-300/60'
   }
 
   return (
     <div className="absolute inset-0">
       {shifts.map((shift, index) => {
-        const [startHour, startMinute] = shift.start.split(':').map(Number)
-        const [endHour, endMinute] = shift.end.split(':').map(Number)
-        const durationMinutes = (endHour * 60 + endMinute) - (startHour * 60 + startMinute)
-
-        if (durationMinutes <= 0) return null
-
-        const gridPosition = calculateGridPosition(startHour, startMinute, durationMinutes)
+        // Use unified coordinate system for precise positioning
+        const position = coordinates.getAvailabilityPosition(
+          shift.startHour, 
+          shift.startMinute, 
+          shift.durationMinutes
+        )
 
         return (
           <div
             key={index}
-            className={cn(
-              "absolute top-0 bottom-0 rounded-sm border border-white/50",
-              statusColors[worker.status],
-              className
-            )}
-            style={{
-              left: gridPosition.left,
-              width: gridPosition.width
-            }}
+            className={cn("absolute top-0 bottom-0 rounded-sm border border-white/50", statusColors[processedWorker.status], className)}
+            style={{ left: position.left, width: position.width }}
           />
         )
       })}
@@ -189,69 +167,66 @@ export function CompactGridAlignedAvailability({
   )
 }
 
-// Multi-day availability for week view
 export function WeekGridAlignedAvailability({ 
   worker, 
   weekDays,
   dayWidth,
-  className 
+  className,
+  timeRange
 }: {
-  worker: Worker
+  worker: InputWorker
   weekDays: Date[]
   dayWidth: number
   className?: string
+  timeRange: TimeRange
 }) {
+  const coordinates = useTimelineCoordinates(timeRange)
+  
   const statusColors = {
     available: 'bg-green-200/40',
     busy: 'bg-yellow-200/40',
-    offline: 'bg-gray-200/40'
+    offline: 'bg-red-200/40',
+    unavailable: 'bg-gray-200/40'
   }
 
   return (
     <div className="absolute inset-0">
       {weekDays.map((date, dayIndex) => {
-        const dayOfWeek = date.getDay()
-        const relevantShifts = worker.working_hours?.filter(shift => 
-          shift.day === undefined || shift.day === dayOfWeek
-        ) || []
+        const { shifts, hasShifts, worker: processedWorker } = useWorkerAvailability(worker, date)
+        
+        // Skip rendering if no availability data for this day
+        if (!hasShifts || shifts.length === 0) {
+          return null
+        }
 
-        const defaultShift = { start: '09:00', end: '17:00' }
-        const shifts = relevantShifts.length > 0 ? relevantShifts : [defaultShift]
+        // Skip rendering if worker is offline or unavailable for this day
+        if (processedWorker.status === 'offline' || processedWorker.status === 'unavailable') {
+          return null
+        }
 
         return (
           <div 
             key={dayIndex}
             className="absolute top-0 bottom-0"
-            style={{
-              left: dayIndex * dayWidth,
-              width: dayWidth
-            }}
+            style={{ left: dayIndex * dayWidth, width: dayWidth }}
           >
             {shifts.map((shift, shiftIndex) => {
-              const [startHour, startMinute] = shift.start.split(':').map(Number)
-              const [endHour, endMinute] = shift.end.split(':').map(Number)
-              const durationMinutes = (endHour * 60 + endMinute) - (startHour * 60 + startMinute)
-
-              if (durationMinutes <= 0) return null
-
-              const gridPosition = calculateGridPosition(startHour, startMinute, durationMinutes)
+              // Use coordinate system for week view positioning
+              const position = coordinates.getAvailabilityPosition(
+                shift.startHour, 
+                shift.startMinute, 
+                shift.durationMinutes
+              )
               
-              // Scale position to day width
-              const scaledLeft = (gridPosition.left / GRID_CONFIG.TOTAL_HOURS / GRID_CONFIG.HOUR_WIDTH) * dayWidth
-              const scaledWidth = (gridPosition.width / GRID_CONFIG.TOTAL_HOURS / GRID_CONFIG.HOUR_WIDTH) * dayWidth
+              // Scale position for day width
+              const scaledLeft = (position.left / (timeRange.totalHours * GRID_CONFIG.HOUR_WIDTH)) * dayWidth
+              const scaledWidth = (position.width / (timeRange.totalHours * GRID_CONFIG.HOUR_WIDTH)) * dayWidth
 
               return (
                 <div
                   key={shiftIndex}
-                  className={cn(
-                    "absolute top-0 bottom-0 rounded-sm border border-white/30",
-                    statusColors[worker.status],
-                    className
-                  )}
-                  style={{
-                    left: scaledLeft,
-                    width: scaledWidth
-                  }}
+                  className={cn("absolute top-0 bottom-0 rounded-sm border border-white/50", statusColors[processedWorker.status], className)}
+                  style={{ left: scaledLeft, width: scaledWidth }}
                 />
               )
             })}

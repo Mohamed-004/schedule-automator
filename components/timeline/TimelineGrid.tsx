@@ -94,12 +94,13 @@ export function TimelineGrid({
         </div>
       )}
 
-      {/* Current Time Indicator */}
-      <CurrentTimeIndicator timeRange={activeTimeRange} />
+      {/* Current Time Indicator Commented Out */}
+      {/* <CurrentTimeIndicator timeRange={activeTimeRange} /> */}
     </div>
   )
 }
 
+/*
 function CurrentTimeIndicator({ timeRange }: { timeRange: TimeRange }) {
   const now = new Date()
   const currentHour = now.getHours()
@@ -125,3 +126,4 @@ function CurrentTimeIndicator({ timeRange }: { timeRange: TimeRange }) {
     </div>
   )
 } 
+*/ 

@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Job, Worker } from './TimelineScheduler'
+import { useWorkerAvailability } from '@/hooks/use-worker-availability'
 
 interface WorkerRowProps {
   worker: Worker & {
@@ -79,15 +80,11 @@ export function WorkerRow({
     return worker.utilization > 80 ? 'Heavily Booked' : 'Partially Available';
   };
   
-  // Get working hours as string
+  // Get working hours as string - Database-First Approach
   const getWorkingHours = () => {
-    if (!worker.working_hours || worker.working_hours.length === 0) {
-      return '9:00 AM - 5:00 PM';
-    }
-    
-    // For simplicity, just return the first shift
-    const shift = worker.working_hours[0];
-    return `${formatTime(shift.start)} - ${formatTime(shift.end)}`;
+    // Use the same logic as green availability blocks
+    const { displayText } = useWorkerAvailability(worker, new Date())
+    return displayText
   };
   
   // Format time from HH:MM to readable format

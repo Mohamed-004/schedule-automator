@@ -3,10 +3,10 @@ import { createClient } from '@/lib/supabase/server'
 
 export async function GET(
   request: Request,
-  { params }: { params: { workerId: string } }
+  { params }: { params: Promise<{ workerId: string }> }
 ) {
   try {
-    const { workerId } = params
+    const { workerId } = await params
     
     if (!workerId) {
       return NextResponse.json({ error: 'Worker ID is required' }, { status: 400 })

@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { format, startOfDay, addDays } from 'date-fns'
 import { Calendar, Users, Clock, TrendingUp } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 // Grid system imports
 import { 
@@ -16,8 +17,11 @@ import { TimelineGrid } from './TimelineGrid'
 import { TimelineHeader } from './TimelineHeader'
 import { GridAlignedJob } from './GridAlignedJob'
 import { GridAlignedAvailability } from './GridAlignedAvailability'
-import { CurrentTimeIndicator } from './CurrentTimeIndicator'
 import HorizontalScrollContainer from './HorizontalScrollContainer'
+import { useWorkerAvailability } from '@/hooks/use-worker-availability'
+import { useTimelineCoordinates, useResponsiveWorkerClasses } from '@/hooks/use-timeline-coordinates'
+import { useHorizontalScroll } from '@/hooks/use-horizontal-scroll'
+import { TimelineScrollbar } from './TimelineScrollbar'
 
 // Types
 interface Worker {
@@ -52,6 +56,9 @@ interface TimelineSchedulerGridProps {
   onJobClick?: (job: Job) => void
   onTimeSlotClick?: (workerId: string, hour: number, minute: number) => void
   className?: string
+  showAvailability?: boolean
+  compact?: boolean
+  timeRange?: TimeRange
 }
 
 export default function TimelineSchedulerGrid({
@@ -60,15 +67,25 @@ export default function TimelineSchedulerGrid({
   selectedDate,
   onJobClick,
   onTimeSlotClick,
-  className = ''
+  className = '',
+  showAvailability = true,
+  compact = false,
+  timeRange: initialTimeRange = { startHour: 6, endHour: 18, totalHours: 12 }
 }: TimelineSchedulerGridProps) {
   const [currentTime, setCurrentTime] = useState(new Date())
   const [selectedWorker, setSelectedWorker] = useState<string | null>(null)
 
-  // Calculate dynamic time range based on actual data
-  const timeRange: TimeRange = useMemo(() => {
+  // Calculate dynamic time range based on actual data, but use the prop if provided
+  const dynamicTimeRange = useMemo(() => {
     return calculateOptimalTimeRange(workers, jobs, selectedDate)
   }, [workers, jobs, selectedDate])
+  
+  // The single source of truth for the time range
+  const timeRange = initialTimeRange || dynamicTimeRange
+
+  const coordinates = useTimelineCoordinates(timeRange)
+  const { workerColumnClasses } = useResponsiveWorkerClasses()
+  const { scrollRef, contentRef, scrollTo, canScrollLeft, canScrollRight } = useHorizontalScroll(true)
 
   // Filter jobs for selected date
   const dayJobs = useMemo(() => {
@@ -202,117 +219,137 @@ export default function TimelineSchedulerGrid({
 
       {/* Timeline with Smart Horizontal Scroll - Responsive Container */}
       <div className="bg-white rounded-lg border overflow-hidden">
-        <HorizontalScrollContainer 
-          timeRange={timeRange}
-          className="p-2 sm:p-4 lg:p-6"
-          showScrollIndicators={true}
-          autoScrollToBusiness={true}
-        >
-          {/* Timeline Content - Responsive */}
-          <div className="space-y-2 sm:space-y-4 min-w-0">
-            {/* Timeline Header */}
-            <TimelineHeader 
-              className="mb-2 sm:mb-4" 
-              timeRange={timeRange}
-              compact={window.innerWidth < 768}
-            />
-
-            {/* Timeline Grid Background */}
-            <TimelineGrid timeRange={timeRange} />
-
-            {/* Current Time Indicator */}
-            {isToday && (
-              <CurrentTimeIndicator 
-                className="pointer-events-none" 
+        <div className="p-2 sm:p-4 lg:p-6">
+          <HorizontalScrollContainer
+            scrollRef={scrollRef}
+            contentRef={contentRef}
+            timeRange={timeRange}
+          >
+            <div className="relative space-y-2 sm:space-y-4">
+              <TimelineHeader 
+                className="mb-2 sm:mb-4" 
                 timeRange={timeRange}
+                compact={typeof window !== 'undefined' && window.innerWidth < 768}
               />
-            )}
+              <TimelineGrid timeRange={timeRange} />
+              <div className="space-y-1 sm:space-y-2">
+                {workers.map((worker, workerIndex) => {
+                  const workerJobs = dayJobs.filter(job => job.worker_id === worker.id)
+                  const utilization = workerUtilizations[worker.id] || 0
+                  const isSelected = selectedWorker === worker.id
 
-            {/* Workers and Content - Responsive */}
-            <div className="space-y-1 sm:space-y-2">
-              {workers.map((worker, workerIndex) => {
-                const workerJobs = dayJobs.filter(job => job.worker_id === worker.id)
-                const utilization = workerUtilizations[worker.id] || 0
-                const isSelected = selectedWorker === worker.id
-
-                return (
-                  <div
-                    key={worker.id}
-                    className={`relative border border-gray-200 rounded-lg transition-all duration-200 ${
-                      isSelected ? 'bg-blue-50 border-blue-300 shadow-md' : 'bg-white hover:bg-gray-50'
-                    }`}
-                    style={{ 
-                      height: Math.max(60, GRID_CONFIG.WORKER_ROW_HEIGHT * 0.8), // Responsive height
-                      minHeight: Math.max(60, GRID_CONFIG.WORKER_ROW_HEIGHT * 0.8)
-                    }}
-                    onClick={() => setSelectedWorker(isSelected ? null : worker.id)}
-                  >
-                    {/* Worker Info Card - Responsive */}
-                                          <div className="absolute left-0 top-0 w-32 sm:w-40 lg:w-48 h-full bg-white border-r border-gray-200 p-2 sm:p-3 lg:p-4 flex flex-col justify-center z-20 rounded-l-lg">
+                  return (
+                    <div
+                      key={worker.id}
+                      className={`relative border border-gray-200 rounded-lg transition-all duration-200 ${
+                        isSelected ? 'bg-blue-50 border-blue-300 shadow-md' : 'bg-white hover:bg-gray-50'
+                      }`}
+                      style={{ 
+                        height: Math.max(60, GRID_CONFIG.WORKER_ROW_HEIGHT * 0.8), // Responsive height
+                        minHeight: Math.max(60, GRID_CONFIG.WORKER_ROW_HEIGHT * 0.8)
+                      }}
+                      onClick={() => setSelectedWorker(isSelected ? null : worker.id)}
+                    >
+                      {/* Worker Info Card - STICKY */}
+                      <div className={cn(
+                        "sticky left-0 top-0 h-full bg-white border-r border-gray-200 p-2 sm:p-3 lg:p-4 flex flex-col justify-center z-20 rounded-l-lg",
+                        workerColumnClasses
+                      )}
+                      style={{ width: coordinates.workerColumnWidth }}>
                         <div className="flex items-center gap-1 sm:gap-2 lg:gap-3">
-                          <div className="w-6 h-6 sm:w-8 sm:h-8 lg:w-10 lg:h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                            <span className="text-blue-600 font-semibold text-xs sm:text-sm">
-                              {worker.name.split(' ').map(n => n[0]).join('')}
-                            </span>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <h3 className="font-medium text-gray-900 truncate text-xs sm:text-sm lg:text-base">
-                              {worker.name}
-                            </h3>
-                            <div className="flex items-center gap-1 sm:gap-2 mt-0.5 sm:mt-1">
-                              <div className="text-xs text-gray-500 whitespace-nowrap">
-                                {utilization.toFixed(0)}%
-                              </div>
-                              <div className="flex-1 bg-gray-200 rounded-full h-1 sm:h-1.5">
-                                <div
-                                  className={`h-1 sm:h-1.5 rounded-full transition-all ${
-                                    utilization > 80 ? 'bg-red-500' :
-                                    utilization > 60 ? 'bg-yellow-500' : 'bg-green-500'
-                                  }`}
-                                  style={{ width: `${Math.min(100, utilization)}%` }}
-                                />
-                              </div>
+                          <div className="relative">
+                            <div className="w-6 h-6 sm:w-8 sm:h-8 lg:w-10 lg:h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                              <span className="text-blue-600 font-semibold text-xs sm:text-sm">
+                                {worker.name.split(' ').map(n => n[0]).join('')}
+                              </span>
                             </div>
-                            {worker.working_hours?.[0] && (
-                              <div className="text-xs text-gray-500 mt-0.5 sm:mt-1 truncate">
-                                {worker.working_hours[0].start} - {worker.working_hours[0].end}
-                              </div>
-                            )}
+                            
+                            {/* Dynamic Status Indicator - Based on actual data */}
+                            <div className={cn(
+                              "absolute -bottom-1 -right-1 w-3 h-3 sm:w-4 sm:h-4 rounded-full border-2 border-white shadow-sm",
+                              (() => {
+                                const { worker: processedWorker } = useWorkerAvailability(worker, selectedDate)
+                                switch (processedWorker.status) {
+                                  case 'available': return 'bg-green-500'
+                                  case 'busy': return 'bg-yellow-500'
+                                  case 'offline': return 'bg-red-500'
+                                  case 'unavailable': return 'bg-gray-500'
+                                  default: return 'bg-gray-400'
+                                }
+                              })()
+                            )} />
+                          </div>
+                          
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-gray-900 text-xs sm:text-sm lg:text-base truncate">
+                              {worker.name}
+                            </div>
+                            
+                            {/* Working Hours Display - No longer truncated */}
+                            <div className="text-xs sm:text-sm text-gray-600">
+                              {(() => {
+                                const { displayText } = useWorkerAvailability(worker, selectedDate)
+                                return displayText
+                              })()}
+                            </div>
+                            
+                            {/* Status Text */}
+                            <div className={cn(
+                              "text-xs font-medium capitalize",
+                              (() => {
+                                const { worker: processedWorker } = useWorkerAvailability(worker, selectedDate)
+                                switch (processedWorker.status) {
+                                  case 'available': return 'text-green-600'
+                                  case 'busy': return 'text-yellow-600'
+                                  case 'offline': return 'text-red-600'
+                                  case 'unavailable': return 'text-gray-600'
+                                  default: return 'text-gray-600'
+                                }
+                              })()
+                            )}>
+                              {(() => {
+                                const { worker: processedWorker } = useWorkerAvailability(worker, selectedDate)
+                                return processedWorker.status
+                              })()}
+                            </div>
                           </div>
                         </div>
                       </div>
 
-                    {/* Worker Availability - Enhanced with green background matching work hours */}
-                    {worker.working_hours?.map((schedule, scheduleIndex) => (
-                      <GridAlignedAvailability
-                        key={scheduleIndex}
-                        worker={{
-                          ...worker,
-                          status: 'available' // Add required status field
-                        }}
-                        selectedDate={selectedDate}
-                        opacity={0.6}
-                        className="bg-green-100 border-green-300 border-2"
-                        timeRange={timeRange}
-                      />
-                    ))}
+                      {/* Worker Availability - Only render if worker has actual data */}
+                      {showAvailability && (
+                        <GridAlignedAvailability
+                          worker={worker}
+                          selectedDate={selectedDate}
+                          opacity={0.6}
+                          className="bg-green-100 border-green-300 border-2"
+                          timeRange={timeRange}
+                        />
+                      )}
 
-                    {/* Worker Jobs */}
-                    {workerJobs.map(job => (
-                      <GridAlignedJob
-                        key={job.id}
-                        job={job}
-                        hasConflict={false} // Simplified for now
-                        onClick={() => onJobClick?.(job)}
-                        className="z-10"
-                      />
-                    ))}
-                  </div>
-                )
-              })}
+                      {/* Worker Jobs */}
+                      {workerJobs.map(job => (
+                        <GridAlignedJob
+                          key={job.id}
+                          job={job}
+                          hasConflict={false} // Simplified for now
+                          onClick={() => onJobClick?.(job)}
+                          className="z-10"
+                          timeRange={timeRange}
+                        />
+                      ))}
+                    </div>
+                  )
+                })}
+              </div>
             </div>
-          </div>
-        </HorizontalScrollContainer>
+          </HorizontalScrollContainer>
+          <TimelineScrollbar 
+            scrollTo={scrollTo}
+            canScrollLeft={canScrollLeft}
+            canScrollRight={canScrollRight}
+          />
+        </div>
       </div>
 
       {/* Legend */}

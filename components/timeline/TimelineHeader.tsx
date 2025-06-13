@@ -7,12 +7,13 @@ import {
   isBusinessHour,
   TimeRange
 } from '@/lib/timeline-grid'
+import { useTimelineCoordinates, useResponsiveWorkerClasses } from '@/hooks/use-timeline-coordinates'
 
 interface TimelineHeaderProps {
   className?: string
   showBusinessHours?: boolean
   compact?: boolean
-  timeRange?: TimeRange
+  timeRange: TimeRange
 }
 
 export function TimelineHeader({ 
@@ -21,94 +22,81 @@ export function TimelineHeader({
   compact = false,
   timeRange
 }: TimelineHeaderProps) {
-  // Use default time range if none provided (for backward compatibility)
-  const defaultTimeRange: TimeRange = {
-    startHour: 0,
-    endHour: 23,
-    totalHours: 24
-  }
-  
-  const activeTimeRange = timeRange || defaultTimeRange
-  const hourLabels = generateHourLabels(activeTimeRange)
-  const totalWidth = getTotalGridWidth(activeTimeRange)
+  const coordinates = useTimelineCoordinates(timeRange)
+  const { workerColumnClasses } = useResponsiveWorkerClasses()
+  const hourLabels = generateHourLabels(timeRange)
+  const totalWidth = getTotalGridWidth(timeRange)
 
   return (
     <div 
       className={cn(
-        "sticky top-0 z-30 bg-white border-b border-gray-200 shadow-sm",
-        compact ? "h-12" : "h-16",
+        "sticky top-0 z-30 bg-white/95 backdrop-blur-sm border-b border-gray-200 shadow-sm",
+        "supports-[position:sticky]:sticky",
+        compact ? "h-10 sm:h-12" : "h-12 sm:h-16",
         className
       )}
-      style={{ width: totalWidth }}
+      style={{ minWidth: totalWidth + coordinates.workerColumnWidth }}
     >
       <div className="relative h-full">
-        {/* Hour Labels */}
-        {hourLabels.map(({ hour, label, position }) => (
-          <div
-            key={hour}
-            className={cn(
-              "absolute top-0 flex flex-col items-center justify-center text-center",
-              compact ? "h-12" : "h-16",
-              // Business hours styling
-              showBusinessHours && isBusinessHour(hour) 
-                ? "text-blue-700 font-medium" 
-                : "text-gray-600"
-            )}
-            style={{
-              left: position,
-              width: GRID_CONFIG.HOUR_WIDTH
-            }}
-          >
-            {/* Main hour label */}
-            <div className={cn(
-              "font-medium",
-              compact ? "text-xs" : "text-sm"
-            )}>
-              {label}
-            </div>
-            
-            {/* 24-hour format (optional) */}
-            {!compact && (
-              <div className="text-xs text-gray-400 mt-0.5">
-                {hour.toString().padStart(2, '0')}:00
-              </div>
-            )}
-            
-            {/* Business hours indicator */}
-            {showBusinessHours && isBusinessHour(hour) && (
-              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-blue-500 rounded-full" />
-            )}
+        {/* Worker Column Spacer - Uses unified coordinate system */}
+        <div 
+          className={cn(
+            "absolute left-0 top-0 h-full bg-gradient-to-r from-gray-50 to-gray-100 border-r border-gray-300 z-10",
+            workerColumnClasses
+          )}
+          style={{ width: coordinates.workerColumnWidth }}
+        >
+          <div className="flex items-center justify-center h-full text-xs sm:text-sm font-semibold text-gray-700">
+            <span className="hidden sm:inline">Team Schedule</span>
+            <span className="sm:hidden">Team</span>
           </div>
-        ))}
-
-        {/* Grid alignment indicators (15-minute marks) */}
-        <div className="absolute bottom-0 left-0 right-0 h-2">
-          {hourLabels.map(({ hour, position }) => (
-            <React.Fragment key={`marks-${hour}`}>
-              {/* Quarter hour marks */}
-              {[0.25, 0.5, 0.75].map((fraction, index) => (
-                <div
-                  key={`${hour}-${index}`}
-                  className="absolute bottom-0 w-px h-2 bg-gray-300"
-                  style={{ 
-                    left: position + (GRID_CONFIG.HOUR_WIDTH * fraction)
-                  }}
-                />
-              ))}
-            </React.Fragment>
-          ))}
         </div>
 
-        {/* Hour boundary lines */}
-        <div className="absolute inset-0">
-          {hourLabels.map(({ hour, position }) => (
-            <div
-              key={`line-${hour}`}
-              className="absolute top-0 bottom-0 w-px bg-gray-300"
-              style={{ left: position }}
-            />
-          ))}
+        {/* Hour Labels - Positioned using PURE absolute coordinates */}
+        <div className="absolute top-0 left-0 h-full">
+          {hourLabels.map(({ hour, label }) => {
+            const isBusinessHour = showBusinessHours && hour >= 9 && hour < 17
+            // Use the coordinate system directly for absolute positioning
+            const position = coordinates.getTimePosition(hour, 0)
+            
+            return (
+              <div
+                key={hour}
+                className={cn(
+                  "absolute top-0 bottom-0 flex-shrink-0 border-r border-gray-100 last:border-r-0",
+                  compact ? "min-w-[60px]" : "min-w-[80px]",
+                  isBusinessHour && "bg-blue-50/30"
+                )}
+                style={{ 
+                  width: coordinates.hourWidth,
+                  left: position
+                }}
+              >
+                {/* Hour marker line */}
+                <div className="absolute left-0 top-0 bottom-0 w-[1px] sm:w-[2px] bg-gray-300" />
+                
+                {/* Hour label */}
+                <div className={cn(
+                  "absolute top-1 sm:top-2 left-1 sm:left-2 font-semibold text-gray-800",
+                  compact ? "text-xs" : "text-xs sm:text-sm"
+                )}>
+                  {label}
+                </div>
+                
+                {/* Business hours indicator */}
+                {isBusinessHour && (
+                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-blue-200" />
+                )}
+              </div>
+            )
+          })}
         </div>
+        
+        {/* Development mode alignment validation */}
+        {process.env.NODE_ENV === 'development' && coordinates.validateAlignment && (
+          <div className="absolute top-0 left-0 w-1 h-1 bg-red-500 opacity-50" 
+               title={`Worker Column: ${coordinates.workerColumnWidth}px`} />
+        )}
       </div>
     </div>
   )
