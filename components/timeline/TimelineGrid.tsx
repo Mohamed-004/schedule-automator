@@ -7,6 +7,7 @@ import {
   isBusinessHour,
   TimeRange
 } from '@/lib/timeline-grid'
+import { useTimelineCoordinates, useResponsiveTimelineWidth } from '@/hooks/use-timeline-coordinates'
 
 interface TimelineGridProps {
   className?: string
@@ -30,67 +31,89 @@ export function TimelineGrid({
   
   const activeTimeRange = timeRange || defaultTimeRange
   const hourLabels = generateHourLabels(activeTimeRange)
-  const totalWidth = getTotalGridWidth(activeTimeRange)
+  const coordinates = useTimelineCoordinates(activeTimeRange)
+  const { responsiveWidth, isResponsive } = useResponsiveTimelineWidth(activeTimeRange)
+  
+  // Use responsive width if available, otherwise fall back to fixed width
+  const totalWidth = isResponsive && responsiveWidth ? responsiveWidth : getTotalGridWidth(activeTimeRange)
 
   return (
     <div 
-      className={cn("relative", className)}
+      className={cn(
+        "relative transition-all duration-300 ease-in-out", 
+        className
+      )}
       style={{ width: totalWidth }}
     >
       {/* Background Pattern */}
       <div className="absolute inset-0">
         {/* Hour blocks with alternating backgrounds */}
-        {hourLabels.map(({ hour, position }) => (
-          <div
-            key={`bg-${hour}`}
-            className={cn(
-              "absolute top-0 bottom-0 border-r border-gray-200",
-              // Alternating backgrounds
-              hour % 2 === 0 ? "bg-gray-50/30" : "bg-white",
-              // Business hours highlighting
-              highlightBusinessHours && isBusinessHour(hour) && "bg-blue-50/20"
-            )}
-            style={{
-              left: position,
-              width: GRID_CONFIG.HOUR_WIDTH
-            }}
-          />
-        ))}
+        {hourLabels.map(({ hour, label }) => {
+          // Use the coordinate system for positioning
+          const position = coordinates.getTimePosition(hour, 0) - coordinates.workerColumnWidth
+          
+          return (
+            <div
+              key={`bg-${hour}`}
+              className={cn(
+                "absolute top-0 bottom-0 border-r border-gray-200 transition-all duration-300",
+                // Alternating backgrounds
+                hour % 2 === 0 ? "bg-gray-50/30" : "bg-white",
+                // Business hours highlighting
+                highlightBusinessHours && isBusinessHour(hour) && "bg-blue-50/20"
+              )}
+              style={{
+                left: position,
+                width: coordinates.hourWidth
+              }}
+            />
+          )
+        })}
       </div>
 
       {/* Major Grid Lines (Hour boundaries) */}
       <div className="absolute inset-0">
-        {hourLabels.map(({ hour, position }) => (
-          <div
-            key={`major-${hour}`}
-            className="absolute top-0 bottom-0 w-px bg-gray-300"
-            style={{ left: position }}
-          />
-        ))}
+        {hourLabels.map(({ hour, label }) => {
+          // Use the coordinate system for positioning
+          const position = coordinates.getTimePosition(hour, 0) - coordinates.workerColumnWidth
+          
+          return (
+            <div
+              key={`major-${hour}`}
+              className="absolute top-0 bottom-0 w-px bg-gray-300 transition-all duration-300"
+              style={{ left: position }}
+            />
+          )
+        })}
       </div>
 
       {/* Minor Grid Lines (15-minute subdivisions) */}
       {showSubdivisions && (
         <div className="absolute inset-0">
-          {hourLabels.map(({ hour, position }) => (
-            <React.Fragment key={`minor-${hour}`}>
-              {/* 15-minute marks */}
-              <div
-                className="absolute top-0 bottom-0 w-px bg-gray-200/60"
-                style={{ left: position + (GRID_CONFIG.HOUR_WIDTH * 0.25) }}
-              />
-              {/* 30-minute marks */}
-              <div
-                className="absolute top-0 bottom-0 w-px bg-gray-200/80"
-                style={{ left: position + (GRID_CONFIG.HOUR_WIDTH * 0.5) }}
-              />
-              {/* 45-minute marks */}
-              <div
-                className="absolute top-0 bottom-0 w-px bg-gray-200/60"
-                style={{ left: position + (GRID_CONFIG.HOUR_WIDTH * 0.75) }}
-              />
-            </React.Fragment>
-          ))}
+          {hourLabels.map(({ hour }) => {
+            // Use the coordinate system for positioning
+            const hourPosition = coordinates.getTimePosition(hour, 0) - coordinates.workerColumnWidth
+            
+            return (
+              <React.Fragment key={`minor-${hour}`}>
+                {/* 15-minute marks */}
+                <div
+                  className="absolute top-0 bottom-0 w-px bg-gray-200/60 transition-all duration-300"
+                  style={{ left: hourPosition + (coordinates.hourWidth * 0.25) }}
+                />
+                {/* 30-minute marks */}
+                <div
+                  className="absolute top-0 bottom-0 w-px bg-gray-200/80 transition-all duration-300"
+                  style={{ left: hourPosition + (coordinates.hourWidth * 0.5) }}
+                />
+                {/* 45-minute marks */}
+                <div
+                  className="absolute top-0 bottom-0 w-px bg-gray-200/60 transition-all duration-300"
+                  style={{ left: hourPosition + (coordinates.hourWidth * 0.75) }}
+                />
+              </React.Fragment>
+            )
+          })}
         </div>
       )}
 

@@ -13,23 +13,15 @@ export default function DashboardClientLayout({
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      {/* Sidebar: always visible on desktop, drawer on mobile */}
-      <div className="hidden md:block">
-        <Sidebar open={true} onClose={() => {}} />
-      </div>
-      {/* Drawer sidebar for mobile */}
-      {sidebarOpen && (
-        <>
-          <div className="fixed inset-0 z-30 bg-black/30 md:hidden" onClick={() => setSidebarOpen(false)} />
-          <Sidebar open={true} onClose={() => setSidebarOpen(false)} />
-        </>
-      )}
+      {/* Unified Sidebar for all screen sizes */}
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
       <div className="flex-1 flex flex-col min-w-0">
         <header className="w-full border-b bg-white px-4 sm:px-8 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            {/* Menu button for mobile */}
+            {/* Menu button for all screen sizes */}
             <button
-              className="md:hidden p-2 border rounded bg-white shadow"
+              className="p-2 border rounded bg-white shadow"
               onClick={() => setSidebarOpen(true)}
               aria-label="Open sidebar"
             >

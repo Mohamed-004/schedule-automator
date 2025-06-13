@@ -7,7 +7,7 @@ import {
   isBusinessHour,
   TimeRange
 } from '@/lib/timeline-grid'
-import { useTimelineCoordinates, useResponsiveWorkerClasses } from '@/hooks/use-timeline-coordinates'
+import { useTimelineCoordinates, useResponsiveWorkerClasses, useResponsiveTimelineWidth } from '@/hooks/use-timeline-coordinates'
 
 interface TimelineHeaderProps {
   className?: string
@@ -24,14 +24,18 @@ export function TimelineHeader({
 }: TimelineHeaderProps) {
   const coordinates = useTimelineCoordinates(timeRange)
   const { workerColumnClasses } = useResponsiveWorkerClasses()
+  const { responsiveWidth, isResponsive } = useResponsiveTimelineWidth(timeRange)
   const hourLabels = generateHourLabels(timeRange)
-  const totalWidth = getTotalGridWidth(timeRange)
+  
+  // Use responsive width if available, otherwise fall back to fixed width
+  const totalWidth = isResponsive && responsiveWidth ? responsiveWidth : getTotalGridWidth(timeRange)
 
   return (
     <div 
       className={cn(
-        "sticky top-0 z-30 bg-white/95 backdrop-blur-sm border-b border-gray-200 shadow-sm",
+        "sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-gray-200 shadow-sm",
         "supports-[position:sticky]:sticky",
+        "transition-all duration-300 ease-in-out",
         compact ? "h-10 sm:h-12" : "h-12 sm:h-16",
         className
       )}
@@ -55,7 +59,7 @@ export function TimelineHeader({
         {/* Hour Labels - Positioned using PURE absolute coordinates */}
         <div className="absolute top-0 left-0 h-full">
           {hourLabels.map(({ hour, label }) => {
-            const isBusinessHour = showBusinessHours && hour >= 9 && hour < 17
+            const isBusinessHourTime = showBusinessHours && hour >= 9 && hour < 17
             // Use the coordinate system directly for absolute positioning
             const position = coordinates.getTimePosition(hour, 0)
             
@@ -64,8 +68,9 @@ export function TimelineHeader({
                 key={hour}
                 className={cn(
                   "absolute top-0 bottom-0 flex-shrink-0 border-r border-gray-100 last:border-r-0",
+                  "transition-all duration-300 ease-in-out",
                   compact ? "min-w-[60px]" : "min-w-[80px]",
-                  isBusinessHour && "bg-blue-50/30"
+                  isBusinessHourTime && "bg-blue-50/30"
                 )}
                 style={{ 
                   width: coordinates.hourWidth,
@@ -84,7 +89,7 @@ export function TimelineHeader({
                 </div>
                 
                 {/* Business hours indicator */}
-                {isBusinessHour && (
+                {isBusinessHourTime && (
                   <div className="absolute bottom-0 left-0 right-0 h-1 bg-blue-200" />
                 )}
               </div>
@@ -95,7 +100,8 @@ export function TimelineHeader({
         {/* Development mode alignment validation */}
         {process.env.NODE_ENV === 'development' && coordinates.validateAlignment && (
           <div className="absolute top-0 left-0 w-1 h-1 bg-red-500 opacity-50" 
-               title={`Worker Column: ${coordinates.workerColumnWidth}px`} />
+               title={`Worker Column: ${coordinates.workerColumnWidth}px`} 
+               onLoad={() => coordinates.validateAlignment('TimelineHeader', coordinates.workerColumnWidth, coordinates.workerColumnWidth)} />
         )}
       </div>
     </div>

@@ -4,25 +4,124 @@
  * Handles responsive worker column widths and precise grid positioning
  */
 
-import { useMemo, useEffect, useState } from 'react'
+import { useMemo, useEffect, useState, useCallback } from 'react'
 import { GRID_CONFIG, TimeRange } from '@/lib/timeline-grid'
+import { cn } from '@/lib/utils'
 
 // Screen size breakpoints (matching Tailwind CSS)
 const BREAKPOINTS = {
-  SM: 640,  // sm: breakpoint
-  MD: 768,  // New medium breakpoint
-  LG: 1024  // lg: breakpoint
-} as const
+  SM: 640,
+  MD: 768,
+  LG: 1024,
+  XL: 1280,
+  XXL: 1536
+}
 
-// Worker column width mapping (matching Tailwind classes)
+// Worker column widths - must match the GRID_CONFIG
 const WORKER_COLUMN_WIDTHS = {
-  MOBILE: 128,   // w-32
-  TABLET: 160,   // sm:w-40
-  MEDIUM: 192,   // md:w-48
-  DESKTOP: 224   // lg:w-56
-} as const
+  MOBILE: GRID_CONFIG.WORKER_COLUMN_WIDTH.MOBILE,
+  TABLET: GRID_CONFIG.WORKER_COLUMN_WIDTH.TABLET,
+  DESKTOP: GRID_CONFIG.WORKER_COLUMN_WIDTH.DESKTOP
+}
 
-export interface TimelineCoordinates {
+// Screen size detection hook
+function useScreenSize() {
+  const [screenSize, setScreenSize] = useState('desktop')
+
+  useEffect(() => {
+    const handleResize = () => {
+      const width = window.innerWidth
+      if (width < BREAKPOINTS.MD) {
+        setScreenSize('mobile')
+      } else if (width < BREAKPOINTS.LG) {
+        setScreenSize('tablet')
+      } else {
+        setScreenSize('desktop')
+      }
+    }
+
+    // Set initial size
+    if (typeof window !== 'undefined') {
+      handleResize()
+      window.addEventListener('resize', handleResize)
+      return () => window.removeEventListener('resize', handleResize)
+    }
+  }, [])
+
+  return { screenSize }
+}
+
+// Responsive worker column width hook
+function useResponsiveWorkerWidth() {
+  const { screenSize } = useScreenSize()
+  
+  return useMemo(() => {
+    switch (screenSize) {
+      case 'mobile':
+        return WORKER_COLUMN_WIDTHS.MOBILE
+      case 'tablet':
+        return WORKER_COLUMN_WIDTHS.TABLET
+      case 'desktop':
+      default:
+        return WORKER_COLUMN_WIDTHS.DESKTOP
+    }
+  }, [screenSize])
+}
+
+/**
+ * Hook to calculate responsive timeline width based on viewport
+ * This helps eliminate white space on larger viewports
+ */
+export function useResponsiveTimelineWidth(timeRange: TimeRange) {
+  const [responsiveWidth, setResponsiveWidth] = useState<number | null>(null)
+  const [hourWidth, setHourWidth] = useState<number>(GRID_CONFIG.HOUR_WIDTH)
+  const workerColumnWidth = useResponsiveWorkerWidth()
+
+  useEffect(() => {
+    // Function to calculate optimal width based on viewport
+    const calculateOptimalWidth = () => {
+      // Only run in browser environment
+      if (typeof window === 'undefined') return
+
+      const viewportWidth = window.innerWidth
+      const minHourWidth = 60 // Minimum readable width
+      const maxHourWidth = 120 // Maximum comfortable width
+      
+      // Account for padding, scrollbar, and other UI elements
+      const uiOffset = 48 // Padding, borders, etc.
+      const availableWidth = viewportWidth - workerColumnWidth - uiOffset
+      
+      // Calculate optimal hour width to fill available space
+      const optimalHourWidth = Math.min(
+        Math.max(availableWidth / timeRange.totalHours, minHourWidth),
+        maxHourWidth
+      )
+      
+      setHourWidth(optimalHourWidth)
+      setResponsiveWidth((optimalHourWidth * timeRange.totalHours) + 1) // +1 for border
+    }
+
+    // Calculate on mount and window resize
+    calculateOptimalWidth()
+    window.addEventListener('resize', calculateOptimalWidth)
+    
+    return () => {
+      window.removeEventListener('resize', calculateOptimalWidth)
+    }
+  }, [timeRange, workerColumnWidth])
+
+  return {
+    responsiveWidth,
+    hourWidth,
+    isResponsive: responsiveWidth !== null
+  }
+}
+
+/**
+ * Timeline coordinates system
+ * Provides unified positioning for all timeline elements
+ */
+interface TimelineCoordinates {
   workerColumnWidth: number
   timeGridStart: number
   hourWidth: number
@@ -32,117 +131,82 @@ export interface TimelineCoordinates {
     left: number
     width: number
   }
-  validateAlignment?: (elementType: string, expectedPosition: number, actualPosition: number) => void
+  validateAlignment: (elementType: string, expectedPosition: number, actualPosition: number) => void
+  isResponsive: boolean
 }
 
-/**
- * Hook to detect current screen size and return appropriate worker column width
- */
-export function useResponsiveWorkerWidth(): number {
-  const [screenWidth, setScreenWidth] = useState<number>(0)
-
-  useEffect(() => {
-    // Set initial width
-    setScreenWidth(window.innerWidth)
-
-    // Listen for resize events
-    const handleResize = () => {
-      setScreenWidth(window.innerWidth)
-    }
-
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
-
-  return useMemo(() => {
-    if (screenWidth >= BREAKPOINTS.LG) {
-      return WORKER_COLUMN_WIDTHS.DESKTOP // lg:w-56
-    } else if (screenWidth >= BREAKPOINTS.MD) {
-      return WORKER_COLUMN_WIDTHS.MEDIUM
-    } else if (screenWidth >= BREAKPOINTS.SM) {
-      return WORKER_COLUMN_WIDTHS.TABLET  // sm:w-52
-    } else {
-      return WORKER_COLUMN_WIDTHS.MOBILE  // w-32
-    }
-  }, [screenWidth])
-}
-
-/**
- * Main hook for unified timeline coordinate system
- */
 export function useTimelineCoordinates(timeRange: TimeRange): TimelineCoordinates {
-  const workerColumnWidth = useResponsiveWorkerWidth()
-
-  return useMemo(() => {
-    const timeGridStart = workerColumnWidth
-    const hourWidth = GRID_CONFIG.HOUR_WIDTH
-    const minuteWidth = GRID_CONFIG.MINUTE_WIDTH
-
-    // Calculate time position relative to timeline start (including worker column offset)
-    const getTimePosition = (hour: number, minute: number): number => {
-      const relativeHour = hour - timeRange.startHour
-      const totalMinutes = (relativeHour * 60) + minute
-      const gridPosition = totalMinutes * minuteWidth
-      return timeGridStart + gridPosition
+  const { screenSize } = useScreenSize()
+  
+  // Get the responsive width if available
+  const { hourWidth: responsiveHourWidth, isResponsive } = useResponsiveTimelineWidth(timeRange)
+  
+  // Determine the worker column width based on screen size
+  const workerColumnWidth = useMemo(() => {
+    switch (screenSize) {
+      case 'mobile':
+        return WORKER_COLUMN_WIDTHS.MOBILE
+      case 'tablet':
+        return WORKER_COLUMN_WIDTHS.TABLET
+      case 'desktop':
+      default:
+        return WORKER_COLUMN_WIDTHS.DESKTOP
     }
-
-    // Calculate availability block position and width
-    const getAvailabilityPosition = (
-      startHour: number, 
-      startMinute: number, 
-      durationMinutes: number
-    ) => {
-      const left = getTimePosition(startHour, startMinute)
-      const width = Math.max(
-        GRID_CONFIG.JOB_CARD_MIN_WIDTH,
-        durationMinutes * minuteWidth
-      )
-      return { left, width }
+  }, [screenSize])
+  
+  // Use responsive hour width if available, otherwise use the default
+  const hourWidth = isResponsive ? responsiveHourWidth : GRID_CONFIG.HOUR_WIDTH
+  const minuteWidth = hourWidth / 60
+  const timeGridStart = workerColumnWidth
+  
+  // Function to get time position with proper worker column offset
+  const getTimePosition = useCallback((hour: number, minute: number) => {
+    const startHour = timeRange.startHour
+    const adjustedHour = hour - startHour
+    const totalMinutes = (adjustedHour * 60) + minute
+    return totalMinutes * minuteWidth + workerColumnWidth
+  }, [timeRange, workerColumnWidth, minuteWidth])
+  
+  // Calculate availability block position and width
+  const getAvailabilityPosition = useCallback((startHour: number, startMinute: number, durationMinutes: number) => {
+    const left = getTimePosition(startHour, startMinute)
+    const width = durationMinutes * minuteWidth
+    return { left, width }
+  }, [getTimePosition, minuteWidth])
+  
+  // Development-mode alignment validation function
+  const validateAlignment = useCallback((elementType: string, expectedPosition: number, actualPosition: number) => {
+    if (process.env.NODE_ENV === 'development') {
+      const tolerance = 2 // 2px tolerance
+      const difference = Math.abs(expectedPosition - actualPosition)
+      
+      if (difference > tolerance) {
+        console.warn(
+          `Timeline Alignment Warning: ${elementType} misaligned by ${difference}px`,
+          { expected: expectedPosition, actual: actualPosition, difference }
+        )
+      }
     }
-
-    // Development-mode alignment validation
-    const validateAlignment = process.env.NODE_ENV === 'development' 
-      ? (elementType: string, expectedPosition: number, actualPosition: number) => {
-          const tolerance = 2 // 2px tolerance
-          const difference = Math.abs(expectedPosition - actualPosition)
-          
-          if (difference > tolerance) {
-            console.warn(
-              `Timeline Alignment Warning: ${elementType} misaligned by ${difference}px`,
-              { expected: expectedPosition, actual: actualPosition, difference }
-            )
-          }
-        }
-      : undefined
-
-    return {
-      workerColumnWidth,
-      timeGridStart,
-      hourWidth,
-      minuteWidth,
-      getTimePosition,
-      getAvailabilityPosition,
-      validateAlignment
-    }
-  }, [timeRange, workerColumnWidth])
-}
-
-/**
- * Hook for getting responsive Tailwind classes that match coordinate calculations
- */
-export function useResponsiveWorkerClasses(): {
-  workerColumnClasses: string
-  workerColumnWidth: number
-} {
-  const workerColumnWidth = useResponsiveWorkerWidth()
-
-  const workerColumnClasses = useMemo(() => {
-    return 'w-32 sm:w-40 md:w-48 lg:w-56' // Added md breakpoint
   }, [])
 
   return {
-    workerColumnClasses,
-    workerColumnWidth
+    workerColumnWidth,
+    timeGridStart,
+    hourWidth,
+    minuteWidth,
+    getTimePosition,
+    getAvailabilityPosition,
+    validateAlignment,
+    isResponsive
+  }
+}
+
+export function useResponsiveWorkerClasses() {
+  return {
+    workerColumnClasses: cn(
+      "w-32 sm:w-40 lg:w-48", // Must match WORKER_COLUMN_WIDTH values
+      "flex-shrink-0"
+    )
   }
 }
 

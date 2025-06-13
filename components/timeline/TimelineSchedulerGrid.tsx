@@ -42,8 +42,8 @@ interface Job {
   scheduled_at: string
   duration: number // Required for grid calculations
   duration_hours?: number
-  status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
-  priority: 'low' | 'medium' | 'high'
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
+  priority: 'low' | 'medium' | 'high' | 'urgent'
   worker_id: string
   client_name?: string
   location?: string
@@ -203,9 +203,9 @@ export default function TimelineSchedulerGrid({
           
           <div className="bg-yellow-50 rounded-lg p-3">
             <div className="text-2xl font-bold text-yellow-600">
-              {dayJobs.filter(job => job.status === 'in_progress').length}
+              {dayJobs.filter(job => job.status === 'pending').length}
             </div>
-            <div className="text-sm text-yellow-700">In Progress</div>
+            <div className="text-sm text-yellow-700">Pending</div>
           </div>
           
           <div className="bg-red-50 rounded-lg p-3">
@@ -252,7 +252,7 @@ export default function TimelineSchedulerGrid({
                     >
                       {/* Worker Info Card - STICKY */}
                       <div className={cn(
-                        "sticky left-0 top-0 h-full bg-white border-r border-gray-200 p-2 sm:p-3 lg:p-4 flex flex-col justify-center z-20 rounded-l-lg",
+                        "sticky left-0 top-0 h-full bg-white border-r border-gray-200 p-2 sm:p-3 lg:p-4 flex flex-col justify-center z-30 rounded-l-lg",
                         workerColumnClasses
                       )}
                       style={{ width: coordinates.workerColumnWidth }}>
@@ -316,28 +316,31 @@ export default function TimelineSchedulerGrid({
                         </div>
                       </div>
 
-                      {/* Worker Availability - Only render if worker has actual data */}
-                      {showAvailability && (
-                        <GridAlignedAvailability
-                          worker={worker}
-                          selectedDate={selectedDate}
-                          opacity={0.6}
-                          className="bg-green-100 border-green-300 border-2"
-                          timeRange={timeRange}
-                        />
-                      )}
+                      {/* Timeline Content Container - Contains both availability and jobs */}
+                      <div className="absolute inset-0 z-10">
+                        {/* Worker Availability - Only render if worker has actual data */}
+                        {showAvailability && (
+                          <GridAlignedAvailability
+                            worker={worker}
+                            selectedDate={selectedDate}
+                            opacity={0.6}
+                            className="bg-green-100 border-green-300 border-2"
+                            timeRange={timeRange}
+                          />
+                        )}
 
-                      {/* Worker Jobs */}
-                      {workerJobs.map(job => (
-                        <GridAlignedJob
-                          key={job.id}
-                          job={job}
-                          hasConflict={false} // Simplified for now
-                          onClick={() => onJobClick?.(job)}
-                          className="z-10"
-                          timeRange={timeRange}
-                        />
-                      ))}
+                        {/* Worker Jobs */}
+                        {workerJobs.map(job => (
+                          <GridAlignedJob
+                            key={job.id}
+                            job={job}
+                            hasConflict={false} // Simplified for now
+                            onClick={() => onJobClick?.(job)}
+                            className="z-20"
+                            timeRange={timeRange}
+                          />
+                        ))}
+                      </div>
                     </div>
                   )
                 })}
@@ -362,11 +365,11 @@ export default function TimelineSchedulerGrid({
           </div>
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 bg-blue-500 rounded"></div>
-            <span className="text-gray-600">Scheduled Job</span>
+            <span className="text-gray-600">In Progress</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 bg-yellow-500 rounded"></div>
-            <span className="text-gray-600">In Progress</span>
+            <span className="text-gray-600">Pending</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 bg-green-500 rounded"></div>

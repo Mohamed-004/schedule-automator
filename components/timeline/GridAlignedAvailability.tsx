@@ -72,7 +72,7 @@ export function GridAlignedAvailability({
         }
 
         return (
-          <div key={index} className="relative">
+          <div key={index} className="relative h-full">
             <div
               className={cn("absolute top-0 bottom-0 border-2 rounded-sm", config.bg, config.border, className)}
               style={{ 
@@ -96,21 +96,6 @@ export function GridAlignedAvailability({
                   {formatGridTime(shift.endHour, shift.endMinute)}
                 </div>
               </>
-            )}
-            <div
-              className={cn("absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full border border-white shadow-sm", 
-                processedWorker.status === 'available' ? "bg-green-500" : 
-                processedWorker.status === 'busy' ? "bg-yellow-500" : "bg-gray-400")}
-              style={{ left: position.left + position.width / 2 - 4 }}
-            />
-            
-            {/* Development mode position indicator */}
-            {process.env.NODE_ENV === 'development' && (
-              <div 
-                className="absolute top-0 w-1 h-2 bg-blue-500 opacity-75"
-                style={{ left: position.left }}
-                title={`${shift.startHour}:${shift.startMinute.toString().padStart(2, '0')} @ ${position.left}px`}
-              />
             )}
           </div>
         )

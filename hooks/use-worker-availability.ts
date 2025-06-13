@@ -165,11 +165,21 @@ function processWorkerAvailabilityForDate(worker: InputWorker, selectedDate: Dat
   let timeRange = undefined
   
   if (validShifts.length > 0) {
-    const firstShift = validShifts[0]
-    const startTime = formatTime(firstShift.start)
-    const endTime = formatTime(firstShift.end)
+    // Find the true start and end times across all shifts for the day
+    const overallTime = validShifts.reduce((acc, shift) => {
+      if (shift.start < acc.start) {
+        acc.start = shift.start
+      }
+      if (shift.end > acc.end) {
+        acc.end = shift.end
+      }
+      return acc
+    }, { start: validShifts[0].start, end: validShifts[0].end })
+
+    const startTime = formatTime(overallTime.start)
+    const endTime = formatTime(overallTime.end)
     displayText = `${startTime} - ${endTime}`
-    timeRange = `${firstShift.start}-${firstShift.end}`
+    timeRange = `${overallTime.start}-${overallTime.end}`
   }
   
   return {

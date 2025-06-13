@@ -315,7 +315,9 @@ export function generateHourLabels(timeRange: TimeRange): Array<{ hour: number; 
  * Calculates total grid width in pixels for dynamic range
  */
 export function getTotalGridWidth(timeRange: TimeRange): number {
-  return timeRange.totalHours * GRID_CONFIG.HOUR_WIDTH
+  if (!timeRange || typeof timeRange.totalHours !== 'number') return 24 * GRID_CONFIG.HOUR_WIDTH // Default fallback
+  // The +1 accounts for the final border on the last hour column, ensuring a perfect fit.
+  return (timeRange.totalHours * GRID_CONFIG.HOUR_WIDTH) + 1
 }
 
 /**
