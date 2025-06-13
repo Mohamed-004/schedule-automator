@@ -1,19 +1,11 @@
 'use client'
 
-import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react'
-import { format, startOfDay, addHours, isSameDay, parseISO, differenceInMinutes, addDays, startOfWeek, isToday, addMinutes, endOfDay } from 'date-fns'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Clock, MapPin, User, AlertTriangle, Calendar, Filter, X, CalendarClock, ArrowLeft, ArrowRight, MoreHorizontal, Phone, Activity, BriefcaseBusiness, ChevronRight, Edit, Check, RotateCw, Trash2, ExternalLink } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
-import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
+import React, { useState, useMemo, useCallback } from 'react'
+import { parseISO, isSameDay, startOfWeek, addDays } from 'date-fns'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { DateRangePicker } from './DateRangePicker'
-import { WeekTimelineHeader } from './WeekTimelineHeader'
-import { WeekWorkerLane } from './WeekWorkerLane'
 
-// Import the new grid-based timeline system
-import { GridTimelineScheduler } from '@/components/timeline/GridTimelineScheduler'
+// Import the improved timeline system with dynamic time ranges
+import ImprovedTimelineScheduler from '@/components/timeline/TimelineSchedulerGrid'
 
 export interface Job {
   id: string
@@ -47,13 +39,6 @@ export interface Worker {
   utilization?: number // Worker's utilization percentage
 }
 
-interface FilterState {
-  search: string
-  status: string
-  priority: string
-  worker: string
-}
-
 interface TimelineSchedulerProps {
   jobs: Job[]
   workers: Worker[]
@@ -71,10 +56,14 @@ const transformJobsForGrid = (jobs: Job[]) => {
     ...job,
     // Ensure duration is in minutes
     duration: job.duration || (job.duration_hours ? job.duration_hours * 60 : 60),
+    // Ensure worker_id is always a string
+    worker_id: job.worker_id || 'unassigned',
     // Map status to grid system expectations
-    status: job.status === 'scheduled' ? 'pending' as const : 
-            job.status === 'overdue' ? 'cancelled' as const :
-            job.status as 'pending' | 'in_progress' | 'completed' | 'cancelled'
+    status: job.status === 'overdue' ? 'cancelled' as const :
+            job.status as 'scheduled' | 'in_progress' | 'completed' | 'cancelled',
+    // Map priority to grid system expectations
+    priority: job.priority === 'urgent' ? 'high' as const : 
+              job.priority as 'low' | 'medium' | 'high'
   }))
 }
 
@@ -82,6 +71,8 @@ const transformJobsForGrid = (jobs: Job[]) => {
 const transformWorkersForGrid = (workers: Worker[]) => {
   return workers.map(worker => ({
     ...worker,
+    // Add required email field
+    email: `${worker.name.toLowerCase().replace(/\s+/g, '.')}@company.com`,
     // Ensure working_hours is in the expected format
     working_hours: worker.working_hours?.map(hours => ({
       start: hours.start,
@@ -91,7 +82,7 @@ const transformWorkersForGrid = (workers: Worker[]) => {
   }))
 }
 
-export const TimelineScheduler = React.memo(function TimelineScheduler({ 
+export const TimelineSchedulerGrid = React.memo(function TimelineSchedulerGrid({ 
   jobs, 
   workers, 
   selectedDate,
@@ -132,18 +123,18 @@ export const TimelineScheduler = React.memo(function TimelineScheduler({
     }
   }, [jobs, selectedDate, onJobMove])
 
-    return (
-      <TooltipProvider>
+  return (
+    <TooltipProvider>
       <div className="h-full bg-gray-50">
-        <GridTimelineScheduler
+        <ImprovedTimelineScheduler
           jobs={gridJobs}
           workers={gridWorkers}
-                      selectedDate={selectedDate}
-                      viewMode={viewMode}
-                    onDateChange={onDateChange}
-                    onViewModeChange={onViewModeChange}
-          onJobUpdate={handleJobUpdate}
-          onJobMove={handleJobMove}
+          selectedDate={selectedDate}
+          onJobClick={handleJobUpdate}
+          onTimeSlotClick={(workerId, hour, minute) => {
+            // Handle time slot clicks for creating new jobs
+            console.log('Time slot clicked:', workerId, hour, minute)
+          }}
           className="h-full"
         />
       </div>
