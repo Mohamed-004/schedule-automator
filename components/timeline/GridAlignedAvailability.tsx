@@ -56,7 +56,7 @@ export function GridAlignedAvailability({
   }
 
   return (
-    <div className="absolute inset-0">
+    <div className="absolute inset-0 overflow-visible">
       {shifts.map((shift, index) => {
         // Use unified coordinate system for precise positioning
         const position = coordinates.getAvailabilityPosition(
@@ -74,24 +74,38 @@ export function GridAlignedAvailability({
         return (
           <div key={index} className="relative h-full">
             <div
-              className={cn("absolute top-0 bottom-0 border-2 rounded-sm", config.bg, config.border, className)}
+              className={cn(
+                "absolute top-0 bottom-0 border-2 rounded-md", 
+                config.bg, 
+                config.border, 
+                className
+              )}
               style={{ 
                 left: position.left, 
-                width: position.width, 
-                opacity: opacity || config.opacity 
+                width: Math.max(position.width, 20), // Ensure minimum width for very short shifts
+                opacity: opacity || config.opacity,
+                boxShadow: "0 1px 3px rgba(0,0,0,0.1), inset 0 0 0 1px rgba(255,255,255,0.2)"
               }}
             />
             {showTimeLabels && (
               <>
                 <div
-                  className={cn("absolute top-1 text-xs font-medium px-1 py-0.5 rounded", config.text, "bg-white/80 border border-current/20")}
-                  style={{ left: position.left + 2 }}
+                  className={cn(
+                    "absolute top-2 text-xs font-medium px-2 py-1 rounded", 
+                    config.text, 
+                    "bg-white/90 border border-current/20 shadow-sm"
+                  )}
+                  style={{ left: position.left + 4 }}
                 >
                   {formatGridTime(shift.startHour, shift.startMinute)}
                 </div>
                 <div
-                  className={cn("absolute bottom-1 text-xs font-medium px-1 py-0.5 rounded", config.text, "bg-white/80 border border-current/20")}
-                  style={{ right: `calc(100% - ${position.left + position.width - 2}px)` }}
+                  className={cn(
+                    "absolute bottom-2 text-xs font-medium px-2 py-1 rounded", 
+                    config.text, 
+                    "bg-white/90 border border-current/20 shadow-sm"
+                  )}
+                  style={{ right: `calc(100% - ${position.left + position.width - 4}px)` }}
                 >
                   {formatGridTime(shift.endHour, shift.endMinute)}
                 </div>

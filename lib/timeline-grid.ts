@@ -12,23 +12,23 @@ export const GRID_CONFIG = {
   MAX_HOURS_DISPLAY: 18 as const,    // Maximum hours to show
   
   // Grid dimensions
-  HOUR_WIDTH: 80,       // Pixels per hour block
-  MINUTE_WIDTH: 80 / 60, // Pixels per minute (80px/60min = 1.33px/min)
+  HOUR_WIDTH: 90,       // Pixels per hour block (increased from 80)
+  MINUTE_WIDTH: 90 / 60, // Pixels per minute (90px/60min = 1.5px/min)
   
   // Sub-divisions
   MINUTES_PER_BLOCK: 15, // 15-minute grid snapping
   BLOCKS_PER_HOUR: 4,    // 4 blocks per hour (15min each)
   
   // Visual styling
-  WORKER_ROW_HEIGHT: 100,
-  JOB_CARD_MARGIN: 4,
-  JOB_CARD_MIN_WIDTH: 60, // Minimum width for 30min jobs
+  WORKER_ROW_HEIGHT: 120, // Increased from 100
+  JOB_CARD_MARGIN: 6,    // Increased from 4
+  JOB_CARD_MIN_WIDTH: 70, // Increased from 60
   
   // Worker column widths - unified across all components
   WORKER_COLUMN_WIDTH: {
-    MOBILE: 128,    // w-32 (32 * 4px = 128px)
-    TABLET: 160,    // sm:w-40 (40 * 4px = 160px)  
-    DESKTOP: 192    // lg:w-48 (48 * 4px = 192px)
+    MOBILE: 180,    // w-45 (45 * 4px = 180px)
+    TABLET: 220,    // sm:w-55 (55 * 4px = 220px)  
+    DESKTOP: 260    // lg:w-65 (65 * 4px = 260px)
   },
   
   // Business hours highlighting

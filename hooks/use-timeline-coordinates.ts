@@ -204,7 +204,7 @@ export function useTimelineCoordinates(timeRange: TimeRange): TimelineCoordinate
 export function useResponsiveWorkerClasses() {
   return {
     workerColumnClasses: cn(
-      "w-32 sm:w-40 lg:w-48", // Must match WORKER_COLUMN_WIDTH values
+      "w-40 xs:w-40 sm:w-50 lg:w-60", // Must match WORKER_COLUMN_WIDTH values
       "flex-shrink-0"
     )
   }

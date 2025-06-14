@@ -1,7 +1,7 @@
 import React from 'react'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
-import { Clock, MapPin, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { Clock, MapPin, AlertTriangle, CheckCircle2, PlayCircle, XCircle } from 'lucide-react'
 import { 
   calculateGridPosition, 
   formatGridTime,
@@ -52,7 +52,24 @@ export function GridAlignedJob({
   const defaultTimeRange = { startHour: 0, endHour: 23, totalHours: 24 }
   const gridPosition = calculateGridPosition(jobHour, jobMinute, jobDuration, timeRange || defaultTimeRange, true)
   
-  // Status styling
+  // Determine status icon and color
+  const getStatusInfo = () => {
+    switch (job.status) {
+      case 'in_progress':
+        return { icon: <PlayCircle className="w-3.5 h-3.5" />, color: 'bg-blue-500 text-white' }
+      case 'completed':
+        return { icon: <CheckCircle2 className="w-3.5 h-3.5" />, color: 'bg-green-500 text-white' }
+      case 'cancelled':
+        return { icon: <XCircle className="w-3.5 h-3.5" />, color: 'bg-red-500 text-white' }
+      case 'pending':
+      default:
+        return { icon: <Clock className="w-3.5 h-3.5" />, color: 'bg-yellow-500 text-white' }
+    }
+  }
+
+  const { icon, color } = getStatusInfo()
+
+  // Status styling with proper mapping and fallbacks
   const statusConfig = {
     pending: {
       bg: 'bg-yellow-100 border-yellow-300',
@@ -60,11 +77,17 @@ export function GridAlignedJob({
       icon: Clock,
       iconColor: 'text-yellow-600'
     },
-    in_progress: {
+    scheduled: {
       bg: 'bg-blue-100 border-blue-300',
       text: 'text-blue-800',
       icon: Clock,
       iconColor: 'text-blue-600'
+    },
+    in_progress: {
+      bg: 'bg-purple-100 border-purple-300',
+      text: 'text-purple-800',
+      icon: Clock,
+      iconColor: 'text-purple-600'
     },
     completed: {
       bg: 'bg-green-100 border-green-300',
@@ -77,18 +100,33 @@ export function GridAlignedJob({
       text: 'text-gray-800',
       icon: AlertTriangle,
       iconColor: 'text-gray-600'
+    },
+    rescheduled: {
+      bg: 'bg-orange-100 border-orange-300',
+      text: 'text-orange-800',
+      icon: AlertTriangle,
+      iconColor: 'text-orange-600'
+    },
+    overdue: {
+      bg: 'bg-red-100 border-red-300',
+      text: 'text-red-800',
+      icon: AlertTriangle,
+      iconColor: 'text-red-600'
     }
   }
 
   // Priority styling
   const priorityConfig = {
     low: 'border-l-gray-400',
+    normal: 'border-l-blue-400',
     medium: 'border-l-blue-400',
     high: 'border-l-orange-400',
-    urgent: 'border-l-red-500'
+    urgent: 'border-l-red-500',
+    emergency: 'border-l-red-600'
   }
 
-  const config = statusConfig[job.status]
+  // Get config with fallback for unknown status
+  const config = statusConfig[job.status as keyof typeof statusConfig] || statusConfig.scheduled
   const StatusIcon = config.icon
 
   // Format time display
@@ -100,17 +138,17 @@ export function GridAlignedJob({
   return (
     <div
       className={cn(
-        "absolute rounded-lg border-2 shadow-sm cursor-pointer transition-all duration-200 hover:shadow-md hover:scale-[1.02] group",
+        "absolute rounded-lg border-2 shadow-sm cursor-pointer transition-all duration-200 hover:shadow-md hover:scale-[1.02] group overflow-visible",
         config.bg,
         config.text,
-        priorityConfig[job.priority],
+        priorityConfig[job.priority as keyof typeof priorityConfig] || priorityConfig.medium,
         hasConflict && "ring-2 ring-red-400 ring-opacity-75",
         "border-l-4", // Priority indicator
         className
       )}
       style={{
         left: gridPosition.left,
-        width: gridPosition.width,
+        width: Math.max(gridPosition.width, GRID_CONFIG.JOB_CARD_MIN_WIDTH),
         top: GRID_CONFIG.JOB_CARD_MARGIN,
         bottom: GRID_CONFIG.JOB_CARD_MARGIN,
         minWidth: GRID_CONFIG.JOB_CARD_MIN_WIDTH,
@@ -120,13 +158,13 @@ export function GridAlignedJob({
     >
       {/* Conflict indicator */}
       {hasConflict && (
-        <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white" />
+        <div className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full border-2 border-white shadow-sm" />
       )}
 
       {/* Job content */}
-      <div className="h-full p-2 flex flex-col justify-between overflow-hidden">
+      <div className="h-full p-2.5 flex flex-col justify-between overflow-hidden">
         {/* Header */}
-        <div className="flex items-start justify-between gap-1 min-h-0">
+        <div className="flex items-start justify-between gap-1.5 min-h-0">
           <div className="flex-1 min-w-0">
             <h4 className="font-medium text-sm leading-tight truncate">
               {job.title}
@@ -137,12 +175,12 @@ export function GridAlignedJob({
               </p>
             )}
           </div>
-          <StatusIcon className={cn("w-3 h-3 flex-shrink-0", config.iconColor)} />
+          <StatusIcon className={cn("w-4 h-4 flex-shrink-0", config.iconColor)} />
         </div>
 
         {/* Time display */}
-        <div className="text-xs font-medium opacity-90 flex items-center gap-1">
-          <Clock className="w-3 h-3" />
+        <div className="text-xs font-medium opacity-90 flex items-center gap-1.5 mt-1">
+          <Clock className="w-3.5 h-3.5" />
           <span className="truncate">
             {startTime} - {endTime}
           </span>
@@ -150,8 +188,8 @@ export function GridAlignedJob({
 
         {/* Location (if available and space permits) */}
         {job.location && gridPosition.width > 120 && (
-          <div className="text-xs opacity-75 flex items-center gap-1 mt-1">
-            <MapPin className="w-3 h-3 flex-shrink-0" />
+          <div className="text-xs opacity-75 flex items-center gap-1.5 mt-1.5">
+            <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
             <span className="truncate">{job.location}</span>
           </div>
         )}
@@ -160,7 +198,7 @@ export function GridAlignedJob({
         {(job.priority === 'urgent' || job.priority === 'high') && gridPosition.width > 100 && (
           <Badge 
             variant={job.priority === 'urgent' ? 'destructive' : 'secondary'}
-            className="text-xs py-0 px-1 mt-1 self-start"
+            className="text-xs py-0.5 px-1.5 mt-1.5 self-start"
           >
             {job.priority.toUpperCase()}
           </Badge>
@@ -168,12 +206,22 @@ export function GridAlignedJob({
 
         {/* Notes indicator */}
         {job.notes && (
-          <div className="absolute top-1 right-1 w-2 h-2 bg-current rounded-full opacity-50" />
+          <div className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-current rounded-full opacity-50" />
+        )}
+
+        {/* Status Badge */}
+        {icon && (
+          <div className={cn(
+            "absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center",
+            color || "bg-gray-500 text-white" // Fallback color if undefined
+          )}>
+            {icon}
+          </div>
         )}
       </div>
 
       {/* Hover tooltip */}
-      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-gray-900 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50 shadow-lg">
         {job.title} • {startTime} - {endTime}
         {job.location && ` • ${job.location}`}
       </div>
