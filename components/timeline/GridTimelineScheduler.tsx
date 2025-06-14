@@ -24,6 +24,7 @@ import { GridAlignedJob } from './GridAlignedJob'
 import { GridAlignedAvailability } from './GridAlignedAvailability'
 import { CurrentTimeIndicator } from './CurrentTimeIndicator'
 import HorizontalScrollContainer from './HorizontalScrollContainer'
+import { useTimelineCoordinates } from '@/hooks/use-timeline-coordinates'
 
 // Types
 interface Worker {
@@ -76,6 +77,9 @@ export default function GridTimelineScheduler({
     return calculateOptimalTimeRange(workers, jobs, selectedDate)
   }, [workers, jobs, selectedDate])
 
+  // Get coordinates for responsive worker column width
+  const coordinates = useTimelineCoordinates(timeRange)
+
   // Generate grid data based on dynamic time range
   const timeSlots = useMemo(() => generateTimeSlots(timeRange), [timeRange])
   const hourLabels = useMemo(() => generateHourLabels(timeRange), [timeRange])
@@ -125,12 +129,15 @@ export default function GridTimelineScheduler({
         jobDate.getHours(),
         jobDate.getMinutes(),
         duration,
-        timeRange
+        timeRange,
+        false, // Don't include worker offset here since it's handled in rendering
+        undefined,
+        coordinates.minuteWidth
       )
       
       return { ...job, position }
     })
-  }, [dayJobs, timeRange])
+  }, [dayJobs, timeRange, coordinates.minuteWidth])
 
   // Detect overlapping jobs
   const overlappingJobs = useMemo(() => {
@@ -287,7 +294,7 @@ export default function GridTimelineScheduler({
                     onClick={() => setSelectedWorker(isSelected ? null : worker.id)}
                   >
                     {/* Worker Info Card */}
-                    <div className="absolute left-0 top-0 w-48 h-full bg-white border-r border-gray-200 p-4 flex flex-col justify-center z-20">
+                    <div className="absolute left-0 top-0 h-full bg-white border-r border-gray-200 p-4 flex flex-col justify-center z-20" style={{ width: coordinates.workerColumnWidth }}>
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
                           <span className="text-blue-600 font-semibold text-sm">

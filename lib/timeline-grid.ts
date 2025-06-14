@@ -156,12 +156,16 @@ export function timeToPixels(
   minute: number, 
   timeRange?: TimeRange, 
   includeWorkerOffset = false,
-  workerColumnWidth?: number
+  workerColumnWidth?: number,
+  minuteWidth?: number // New parameter for responsive minute width
 ): number {
   const startHour = timeRange?.startHour || 0
   const adjustedHour = hour - startHour
   const totalMinutes = (adjustedHour * 60) + minute
-  let pixelPosition = totalMinutes * GRID_CONFIG.MINUTE_WIDTH
+  
+  // Use responsive minuteWidth if provided, otherwise fall back to fixed width
+  const effectiveMinuteWidth = minuteWidth || GRID_CONFIG.MINUTE_WIDTH
+  let pixelPosition = totalMinutes * effectiveMinuteWidth
   
   // Add worker column offset if requested
   if (includeWorkerOffset) {
@@ -210,7 +214,8 @@ export function calculateGridPosition(
   durationMinutes: number,
   timeRange: TimeRange,
   includeWorkerOffset = true,
-  workerColumnWidth?: number // New parameter for dynamic width
+  workerColumnWidth?: number,
+  minuteWidth?: number // New parameter for responsive minute width
 ): GridPosition {
   // Validate input data existence
   if (startHour === undefined || startHour === null || isNaN(startHour)) {
@@ -235,34 +240,19 @@ export function calculateGridPosition(
     throw new Error('Invalid TimeRange structure provided to calculateGridPosition')
   }
   
-  // Snap start time to grid
-  const snappedStart = snapToGrid(startHour, startMinute)
+  // Calculate start position using responsive minute width
+  const left = timeToPixels(startHour, startMinute, timeRange, includeWorkerOffset, workerColumnWidth, minuteWidth)
   
-  // Snap duration to minimum 15-minute blocks
-  const snappedDuration = Math.max(
-    GRID_CONFIG.MINUTES_PER_BLOCK,
-    Math.ceil(durationMinutes / GRID_CONFIG.MINUTES_PER_BLOCK) * GRID_CONFIG.MINUTES_PER_BLOCK
-  )
-  
-  // Calculate base position
-  const baseLeft = timeToPixels(snappedStart.hour, snappedStart.minute, timeRange)
-  
-  // Add worker column offset for proper alignment with time grid
-  // Use provided width or fall back to tablet width for backward compatibility
-  const offsetWidth = workerColumnWidth || GRID_CONFIG.WORKER_COLUMN_WIDTH.TABLET
-  const left = includeWorkerOffset ? baseLeft + offsetWidth : baseLeft
-  
-  const width = Math.max(
-    GRID_CONFIG.JOB_CARD_MIN_WIDTH,
-    snappedDuration * GRID_CONFIG.MINUTE_WIDTH
-  )
+  // Calculate width using responsive minute width
+  const effectiveMinuteWidth = minuteWidth || GRID_CONFIG.MINUTE_WIDTH
+  const width = durationMinutes * effectiveMinuteWidth
   
   return {
     left,
     width,
-    hour: snappedStart.hour,
-    minute: snappedStart.minute,
-    duration: snappedDuration
+    hour: startHour,
+    minute: startMinute,
+    duration: durationMinutes
   }
 }
 

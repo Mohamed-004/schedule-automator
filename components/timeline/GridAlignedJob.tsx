@@ -8,6 +8,7 @@ import {
   GRID_CONFIG,
   GridPosition 
 } from '@/lib/timeline-grid'
+import { useTimelineCoordinates } from '@/hooks/use-timeline-coordinates'
 
 interface Job {
   id: string
@@ -47,10 +48,23 @@ export function GridAlignedJob({
   const jobMinute = jobDate.getMinutes()
   const jobDuration = job.duration || (job.duration_hours ? job.duration_hours * 60 : 60)
 
-  // Calculate grid-aligned position with worker column offset
   // Use default timeRange if not provided for backward compatibility
   const defaultTimeRange = { startHour: 0, endHour: 23, totalHours: 24 }
-  const gridPosition = calculateGridPosition(jobHour, jobMinute, jobDuration, timeRange || defaultTimeRange, true)
+  const activeTimeRange = timeRange || defaultTimeRange
+  
+  // Get coordinates for responsive worker column width
+  const coordinates = useTimelineCoordinates(activeTimeRange)
+
+  // Calculate grid-aligned position with correct worker column offset
+  const gridPosition = calculateGridPosition(
+    jobHour, 
+    jobMinute, 
+    jobDuration, 
+    activeTimeRange, 
+    true, 
+    coordinates.workerColumnWidth,
+    coordinates.minuteWidth
+  )
   
   // Determine status icon and color
   const getStatusInfo = () => {
@@ -237,7 +251,12 @@ export function CompactGridAlignedJob(props: GridAlignedJobProps) {
   const jobMinute = jobDate.getMinutes()
   const jobDuration = job.duration || (job.duration_hours ? job.duration_hours * 60 : 60)
   const defaultTimeRange = { startHour: 0, endHour: 23, totalHours: 24 }
-  const gridPosition = calculateGridPosition(jobHour, jobMinute, jobDuration, timeRange || defaultTimeRange, true)
+  const activeTimeRange = timeRange || defaultTimeRange
+  
+  // Get coordinates for responsive worker column width
+  const coordinates = useTimelineCoordinates(activeTimeRange)
+  
+  const gridPosition = calculateGridPosition(jobHour, jobMinute, jobDuration, activeTimeRange, true, coordinates.workerColumnWidth, coordinates.minuteWidth)
 
   const statusColors = {
     pending: 'bg-yellow-400',
