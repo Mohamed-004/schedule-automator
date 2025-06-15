@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { formatTime12Hour, minutesToTime12Hour } from '@/lib/time-utils'
 
@@ -70,410 +70,262 @@ export function useRealTimelineData(selectedDate: Date): UseRealTimelineDataRetu
   const [workersData, setWorkersData] = useState<SimpleWorkerData[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
   
   const supabase = createClient()
 
-  // Fetch real data from database
-  const fetchRealData = async () => {
+  const fetchRealData = useCallback(async (date: Date) => {
     try {
       setIsLoading(true)
       setError(null)
 
-      // Get current user first
       const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (userError) {
-        throw new Error('Authentication failed: ' + userError.message)
-      }
-      
-      if (!user) {
-        throw new Error('No authenticated user found')
-      }
+      if (userError || !user) throw new Error('Authentication failed.')
 
-      // Get user's business - try both user_id and owner_id fields
-      let { data: business, error: businessError } = await supabase
+      const { data: business, error: businessError } = await supabase
         .from('businesses')
-        .select('*')
+        .select('id')
         .eq('user_id', user.id)
         .single()
+      if (businessError) throw new Error('Could not find business.')
+      if (!business) throw new Error('No business found for user.')
 
-      // If not found with user_id, try owner_id
-      if (businessError && businessError.code === 'PGRST116') {
-        const { data: businessByOwner, error: ownerError } = await supabase
-          .from('businesses')
-          .select('*')
-          .eq('owner_id', user.id)
-          .single()
-        
-        if (!ownerError && businessByOwner) {
-          business = businessByOwner
-          businessError = null
-        }
+      const dateString = date.toISOString().split('T')[0]
+      const dayOfWeek = date.getDay()
+
+      const [
+        { data: workers, error: workersError },
+        { data: jobs, error: jobsError },
+        { data: availability, error: availabilityError },
+        { data: exceptions, error: exceptionsError }
+      ] = await Promise.all([
+        supabase.from('workers').select('*').eq('business_id', business.id).eq('status', 'active'),
+        supabase.from('jobs').select('*, clients(name), workers(name)').eq('business_id', business.id).gte('scheduled_at', `${dateString}T00:00:00.000Z`).lt('scheduled_at', `${dateString}T23:59:59.999Z`),
+        supabase.from('worker_weekly_availability').select('*').eq('day_of_week', dayOfWeek),
+        supabase.from('worker_availability_exceptions').select('*').eq('date', dateString)
+      ])
+
+      if (workersError || jobsError || availabilityError || exceptionsError) {
+        console.error({ workersError, jobsError, availabilityError, exceptionsError })
+        throw new Error('Failed to fetch timeline data.')
       }
-
-      if (businessError) {
-        throw new Error('Could not find business: ' + businessError.message)
-      }
-
-      if (!business) {
-        throw new Error('No business found for user')
-      }
-
-      // Format selected date for query
-      const dateString = selectedDate.toISOString().split('T')[0]
-      const dateDayOfWeek = selectedDate.getDay()
-
-      // Fetch workers for this business
-      const { data: workers, error: workersError } = await supabase
-        .from('workers')
-        .select('*')
-        .eq('business_id', business.id)
-        .eq('status', 'active')
-
-      console.log('Debug: Workers query result:', workers)
-      console.log('Debug: Business ID:', business.id)
-
-      if (workersError) {
-        throw new Error('Failed to fetch workers: ' + workersError.message)
-      }
-
-      const workerIds = (workers || []).map(w => w.id)
-      console.log('Debug: Fetching availability for workers:', workerIds)
-      console.log('Debug: Selected date:', selectedDate)
-      console.log('Debug: Day of week:', dateDayOfWeek)
       
-      // Fetch regular weekly availability
-      const { data: availability, error: availabilityError } = await supabase
-        .from('worker_weekly_availability')
-        .select('*')
-        .in('worker_id', workerIds)
-        .eq('day_of_week', dateDayOfWeek)
-
-      console.log('Debug: Regular availability query result:', availability)
-      console.log('Debug: Availability error:', availabilityError)
-
-      // Fetch availability exceptions for the selected date
-      const { data: exceptions, error: exceptionsError } = await supabase
-        .from('worker_availability_exceptions')
-        .select('*')
-        .in('worker_id', workerIds)
-        .eq('date', dateString)
-
-      console.log('Debug: Exceptions query result:', exceptions)
-      console.log('Debug: Exceptions error:', exceptionsError)
-
-      // Also check if there are ANY availability records for these workers
-      const { data: allAvailability, error: allAvailError } = await supabase
-        .from('worker_weekly_availability')
-        .select('*')
-        .in('worker_id', workerIds)
-
-      console.log('Debug: ALL availability records for workers:', allAvailability)
-
-      if (availabilityError) {
-        console.warn('Failed to fetch availability:', availabilityError.message)
-      }
-
-      if (exceptionsError) {
-        console.warn('Failed to fetch exceptions:', exceptionsError.message)
-      }
-
-      // Fetch jobs for selected date and business
-      const { data: jobs, error: jobsError } = await supabase
-        .from('jobs')
-        .select(`
-          *,
-          clients(name),
-          workers(name)
-        `)
-        .eq('business_id', business.id)
-        .gte('scheduled_at', `${dateString}T00:00:00.000Z`)
-        .lt('scheduled_at', `${dateString}T23:59:59.999Z`)
-
-      if (jobsError) {
-        throw new Error('Failed to fetch jobs: ' + jobsError.message)
-      }
-
-      // Process the data
-      const processedWorkers: SimpleWorkerData[] = (workers || []).map(worker => {
-        // Get jobs for this worker
-        const workerJobs = (jobs || [])
-          .filter(job => job.worker_id === worker.id)
-          .map(job => {
-            const startTime = new Date(job.scheduled_at)
-            const duration = job.duration_minutes || 120
-            
-            return {
-              id: job.id,
-              title: job.title,
-              client: job.clients?.name || 'Unknown Client',
-              startTime: formatTime12Hour(startTime),
-              duration: duration < 60 ? `${duration}m` : `${Math.floor(duration / 60)}h${duration % 60 > 0 ? ` ${duration % 60}m` : ''}`,
-              status: mapJobStatus(job.status),
-              color: getJobColor(job.status),
-              startDate: startTime,
-              durationMinutes: duration
-            }
-          })
-
-        // Sort jobs by start time
-        workerJobs.sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
-
-        // Check for availability exception first (highest priority)
-        const workerException = (exceptions || []).find(ex => ex.worker_id === worker.id) as AvailabilityException | undefined
-        
-        // Get regular weekly availability (fallback)
-        const workerAvailability = (availability || []).find(a => a.worker_id === worker.id)
-        
-        console.log(`Debug: Worker ${worker.name} exception:`, workerException)
-        console.log(`Debug: Worker ${worker.name} regular availability:`, workerAvailability)
-        
-        // Parse time strings properly (HH:MM:SS format)
-        const parseTimeToMinutes = (timeString: string): number => {
-          const [hours, minutes] = timeString.split(':').map(Number)
-          return hours * 60 + minutes
-        }
-
-        let workStartMinutes: number
-        let workEndMinutes: number
-        let workingMinutes: number
-        let availabilityType: 'regular' | 'exception' | 'unavailable' | 'none'
-        let availabilityReason: string | undefined
-        let status: 'available' | 'busy' | 'scheduled' | 'unavailable' = 'available'
-
-        // Priority 1: Check for availability exception
-        if (workerException) {
-          console.log(`Debug: Processing exception for ${worker.name}:`, workerException)
-          
-          if (!workerException.is_available) {
-            // Worker is explicitly unavailable (sick day, time off, etc.)
-            workStartMinutes = 0
-            workEndMinutes = 0
-            workingMinutes = 0
-            availabilityType = 'unavailable'
-            availabilityReason = workerException.reason || 'Unavailable'
-            status = 'unavailable'
-          } else if (workerException.start_time && workerException.end_time) {
-            // Worker has custom hours for this day
-            workStartMinutes = parseTimeToMinutes(workerException.start_time)
-            workEndMinutes = parseTimeToMinutes(workerException.end_time)
-            workingMinutes = workEndMinutes - workStartMinutes
-            availabilityType = 'exception'
-            availabilityReason = workerException.reason || 'Special hours'
-          } else {
-            // Exception exists but no specific times - treat as unavailable
-            workStartMinutes = 0
-            workEndMinutes = 0
-            workingMinutes = 0
-            availabilityType = 'unavailable'
-            availabilityReason = workerException.reason || 'Unavailable'
-            status = 'unavailable'
-          }
-        }
-        // Priority 2: Use regular weekly availability
-        else if (workerAvailability) {
-          workStartMinutes = parseTimeToMinutes(workerAvailability.start_time)
-          workEndMinutes = parseTimeToMinutes(workerAvailability.end_time)
-          workingMinutes = workEndMinutes - workStartMinutes
-          availabilityType = 'regular'
-        }
-        // Priority 3: No availability found - fallback
-        else {
-          workStartMinutes = 0
-          workEndMinutes = 0
-          workingMinutes = 0
-          availabilityType = 'none'
-          status = 'unavailable'
-        }
-
-        // Calculate utilization and time slots only if worker is available
-        let utilization = 0
-        const availableSlots: TimeSlot[] = []
-        
-        if (workingMinutes > 0 && status !== 'unavailable') {
-          const totalJobMinutes = workerJobs.reduce((sum, job) => sum + job.durationMinutes, 0)
-          utilization = Math.round((totalJobMinutes / workingMinutes) * 100)
-
-          // Calculate available slots between jobs
-          if (workerJobs.length === 0) {
-            // Full day available
-            availableSlots.push({
-              startTime: minutesToTime12Hour(workStartMinutes),
-              endTime: minutesToTime12Hour(workEndMinutes),
-              type: 'available',
-              duration: workingMinutes
-            })
-          } else {
-            // Check for gap before first job
-            const firstJobStart = workerJobs[0].startDate
-            const firstJobHour = firstJobStart.getHours()
-            const firstJobMinute = firstJobStart.getMinutes()
-            
-            const firstJobStartMinutes = firstJobHour * 60 + firstJobMinute
-            if (firstJobStartMinutes > workStartMinutes) {
-              const gapMinutes = firstJobStartMinutes - workStartMinutes
-              if (gapMinutes > 0) {
-                availableSlots.push({
-                  startTime: minutesToTime12Hour(workStartMinutes),
-                  endTime: formatTime12Hour(firstJobStart),
-                  type: 'available',
-                  duration: gapMinutes
-                })
-              }
-            }
-
-            // Check for gaps between jobs
-            for (let i = 0; i < workerJobs.length - 1; i++) {
-              const currentJob = workerJobs[i]
-              const nextJob = workerJobs[i + 1]
-              
-              const currentJobEnd = new Date(currentJob.startDate.getTime() + currentJob.durationMinutes * 60000)
-              const nextJobStart = nextJob.startDate
-              
-              const gapMinutes = (nextJobStart.getTime() - currentJobEnd.getTime()) / 60000
-              
-              if (gapMinutes > 0) {
-                availableSlots.push({
-                  startTime: formatTime12Hour(currentJobEnd),
-                  endTime: formatTime12Hour(nextJobStart),
-                  type: 'available',
-                  duration: Math.round(gapMinutes)
-                })
-              }
-            }
-
-            // Check for gap after last job
-            const lastJob = workerJobs[workerJobs.length - 1]
-            const lastJobEnd = new Date(lastJob.startDate.getTime() + lastJob.durationMinutes * 60000)
-            const lastJobEndMinutes = lastJobEnd.getHours() * 60 + lastJobEnd.getMinutes()
-            
-            if (lastJobEndMinutes < workEndMinutes) {
-              const gapMinutes = workEndMinutes - lastJobEndMinutes
-              if (gapMinutes > 0) {
-                availableSlots.push({
-                  startTime: formatTime12Hour(lastJobEnd),
-                  endTime: minutesToTime12Hour(workEndMinutes),
-                  type: 'available',
-                  duration: Math.round(gapMinutes)
-                })
-              }
-            }
-          }
-
-          // Determine status based on current jobs
-          const currentJobs = workerJobs.filter(job => job.status === 'in_progress')
-          if (currentJobs.length > 0) {
-            status = 'busy'
-          } else if (workerJobs.length > 0) {
-            status = 'scheduled'
-          }
-        }
-
-        // Clean up job objects to remove extra fields
-        const cleanJobs = workerJobs.map(job => ({
-          id: job.id,
-          title: job.title,
-          client: job.client,
-          startTime: job.startTime,
-          duration: job.duration,
-          status: job.status,
-          color: job.color
-        }))
-
-        // Format working hours properly without timezone issues
-        const formatTimeFromMinutes = (minutes: number): string => {
-          const hours = Math.floor(minutes / 60)
-          const mins = minutes % 60
-          const period = hours >= 12 ? 'PM' : 'AM'
-          const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours
-          return `${displayHours}:${mins.toString().padStart(2, '0')} ${period}`
-        }
-
-        // Generate appropriate working hours display
-        let workingHoursDisplay: string
-        
-        if (availabilityType === 'unavailable') {
-          workingHoursDisplay = 'Not available'
-        } else if (availabilityType === 'none') {
-          workingHoursDisplay = 'Not available'
-        } else if (workingMinutes > 0) {
-          const hoursText = `${formatTimeFromMinutes(workStartMinutes)} - ${formatTimeFromMinutes(workEndMinutes)}`
-          if (availabilityType === 'exception') {
-            workingHoursDisplay = `${hoursText} (${availabilityReason || 'Special hours'})`
-          } else {
-            workingHoursDisplay = hoursText
-          }
-        } else {
-          workingHoursDisplay = 'Not available'
-        }
-
-        const totalJobMinutes = workerJobs.reduce((sum, job) => sum + job.durationMinutes, 0)
-
-        return {
-          id: worker.id,
-          name: worker.name,
-          status,
-          workingHours: workingHoursDisplay,
-          utilization,
-          jobs: cleanJobs,
-          availableSlots,
-          totalWorkingMinutes: workingMinutes,
-          totalScheduledMinutes: totalJobMinutes,
-          availabilityType,
-          availabilityReason
-        }
-      })
-
-      setWorkersData(processedWorkers)
-    } catch (err) {
-      console.error('Error fetching real timeline data:', err)
-      setError(err instanceof Error ? err.message : 'Failed to load data')
+      const workerIds = (workers || []).map(w => w.id);
       
-      // Fallback to demo data if database fails
-      setWorkersData(getFallbackDemoData())
+      const availabilityForWorkers = (availability || []).filter(a => workerIds.includes(a.worker_id));
+      const exceptionsForWorkers = (exceptions || []).filter(e => workerIds.includes(e.worker_id));
+
+      const processedData = processTimelineData(
+        workers || [], 
+        jobs || [], 
+        availabilityForWorkers, 
+        exceptionsForWorkers
+      );
+      
+      setWorkersData(processedData)
+
+    } catch (err: any) {
+      console.error("Error fetching timeline data:", err)
+      setError(err.message || 'An unknown error occurred.')
+      setWorkersData([]) // Clear data on error
     } finally {
       setIsLoading(false)
     }
+  }, [supabase])
+
+  useEffect(() => {
+    fetchRealData(selectedDate)
+  }, [selectedDate, fetchRealData, refreshKey])
+
+  const refreshData = () => {
+    setRefreshKey(prev => prev + 1)
   }
 
-  // Calculate stats
   const stats = useMemo(() => {
+    if (!workersData.length) {
+      return {
+        totalJobs: 0,
+        completedJobs: 0,
+        remainingJobs: 0,
+        totalWorkers: 0,
+        averageUtilization: 0,
+        totalScheduledHours: 0,
+        totalAvailableHours: 0,
+      }
+    }
+
     const totalJobs = workersData.reduce((sum, worker) => sum + worker.jobs.length, 0)
     const completedJobs = workersData.reduce((sum, worker) => 
       sum + worker.jobs.filter(job => job.status === 'completed').length, 0)
-    const remainingJobs = totalJobs - completedJobs
-    const totalWorkers = workersData.length
-    const averageUtilization = workersData.length > 0 
-      ? workersData.reduce((sum, worker) => sum + worker.utilization, 0) / workersData.length 
+    
+    const totalScheduledMinutes = workersData.reduce((sum, worker) => sum + worker.totalScheduledMinutes, 0)
+    const totalWorkingMinutes = workersData.reduce((sum, worker) => sum + worker.totalWorkingMinutes, 0)
+    
+    const averageUtilization = workersData.length > 0
+      ? Math.round(workersData.reduce((sum, worker) => sum + worker.utilization, 0) / workersData.length)
       : 0
 
     return {
       totalJobs,
       completedJobs,
-      remainingJobs,
-      totalWorkers,
+      remainingJobs: totalJobs - completedJobs,
+      totalWorkers: workersData.length,
       averageUtilization,
-      totalScheduledHours: 4.5,
-      totalAvailableHours: 18
+      totalScheduledHours: totalScheduledMinutes / 60,
+      totalAvailableHours: totalWorkingMinutes / 60,
     }
   }, [workersData])
 
-  // Refresh function
-  const refreshData = () => {
-    fetchRealData()
-  }
+  return { workersData, stats, isLoading, error, refreshData }
+}
 
-  // Fetch data on mount and date change
-  useEffect(() => {
-    fetchRealData()
-  }, [selectedDate])
+// This function can be moved outside the hook to be a pure function
+function processTimelineData(
+  workers: any[], 
+  jobs: any[], 
+  availability: any[], 
+  exceptions: any[]
+): SimpleWorkerData[] {
+  return (workers || []).map(worker => {
+    const workerJobs = (jobs || [])
+      .filter(job => job.worker_id === worker.id)
+      .map(job => {
+        const startTime = new Date(job.scheduled_at)
+        const duration = job.duration_minutes || 120
+        
+        return {
+          id: job.id,
+          title: job.title,
+          client: job.clients?.name || 'Unknown Client',
+          startTime: formatTime12Hour(startTime),
+          duration: duration < 60 ? `${duration}m` : `${Math.floor(duration / 60)}h${duration % 60 > 0 ? ` ${duration % 60}m` : ''}`,
+          status: mapJobStatus(job.status),
+          color: getJobColor(job.status),
+          startDate: startTime,
+          durationMinutes: duration
+        }
+      })
+      .sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
 
-  return {
-    workersData,
-    stats,
-    isLoading,
-    error,
-    refreshData
-  }
+    const workerException = (exceptions || []).find(ex => ex.worker_id === worker.id) as AvailabilityException | undefined
+    const workerAvailability = (availability || []).find(a => a.worker_id === worker.id)
+
+    const parseTimeToMinutes = (timeString: string): number => {
+      const [hours, minutes] = timeString.split(':').map(Number)
+      return hours * 60 + minutes
+    }
+
+    let workStartMinutes = 0
+    let workEndMinutes = 0
+    let availabilityType: 'regular' | 'exception' | 'unavailable' | 'none' = 'none'
+    let availabilityReason: string | undefined
+    let status: 'available' | 'busy' | 'scheduled' | 'unavailable' = 'available'
+
+    if (workerException) {
+      if (!workerException.is_available) {
+        availabilityType = 'unavailable'
+        availabilityReason = workerException.reason || 'Unavailable'
+      } else if (workerException.start_time && workerException.end_time) {
+        workStartMinutes = parseTimeToMinutes(workerException.start_time)
+        workEndMinutes = parseTimeToMinutes(workerException.end_time)
+        availabilityType = 'exception'
+        availabilityReason = workerException.reason || 'Special hours'
+      } else {
+        availabilityType = 'unavailable'
+        availabilityReason = workerException.reason || 'Unavailable'
+      }
+    } else if (workerAvailability) {
+      workStartMinutes = parseTimeToMinutes(workerAvailability.start_time)
+      workEndMinutes = parseTimeToMinutes(workerAvailability.end_time)
+      availabilityType = 'regular'
+    }
+
+    const workingMinutes = workEndMinutes - workStartMinutes
+    const availableSlots: TimeSlot[] = []
+    
+    const totalJobMinutes = workerJobs.reduce((sum, job) => sum + job.durationMinutes, 0)
+    let utilization = 0
+
+    if (workingMinutes > 0) {
+      utilization = Math.round((totalJobMinutes / workingMinutes) * 100)
+
+      if (workerJobs.length === 0) {
+        availableSlots.push({
+          startTime: minutesToTime12Hour(workStartMinutes),
+          endTime: minutesToTime12Hour(workEndMinutes),
+          type: 'available',
+          duration: workingMinutes
+        })
+      } else {
+        let lastEventTime = workStartMinutes;
+        workerJobs.forEach(job => {
+            const jobStartMinutes = job.startDate.getHours() * 60 + job.startDate.getMinutes();
+            if (jobStartMinutes > lastEventTime) {
+                availableSlots.push({
+                    startTime: minutesToTime12Hour(lastEventTime),
+                    endTime: formatTime12Hour(job.startDate),
+                    type: 'available',
+                    duration: jobStartMinutes - lastEventTime,
+                });
+            }
+            lastEventTime = jobStartMinutes + job.durationMinutes;
+        });
+        if (lastEventTime < workEndMinutes) {
+            availableSlots.push({
+                startTime: minutesToTime12Hour(lastEventTime),
+                endTime: minutesToTime12Hour(workEndMinutes),
+                type: 'available',
+                duration: workEndMinutes - lastEventTime,
+            });
+        }
+      }
+      
+      const currentJobs = workerJobs.filter(job => job.status === 'in_progress')
+      if (currentJobs.length > 0) {
+        status = 'busy'
+      } else if (workerJobs.length > 0) {
+        status = 'scheduled'
+      }
+    } else {
+      status = 'unavailable'
+    }
+
+    if (availabilityType === 'unavailable' || availabilityType === 'none') {
+      status = 'unavailable'
+    }
+
+    const cleanJobs = workerJobs.map(({ startDate, durationMinutes, ...job }) => job)
+
+    const formatTimeFromMinutes = (minutes: number): string => {
+      const hours = Math.floor(minutes / 60)
+      const mins = minutes % 60
+      const period = hours >= 12 ? 'PM' : 'AM'
+      const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours
+      return `${displayHours}:${mins.toString().padStart(2, '0')} ${period}`
+    }
+
+    let workingHoursDisplay: string
+    if (availabilityType === 'unavailable' || availabilityType === 'none' || workingMinutes <= 0) {
+      workingHoursDisplay = 'Not available'
+    } else {
+      const hoursText = `${formatTimeFromMinutes(workStartMinutes)} - ${formatTimeFromMinutes(workEndMinutes)}`
+      workingHoursDisplay = availabilityType === 'exception' ? `${hoursText} (${availabilityReason || 'Special hours'})` : hoursText
+    }
+
+    return {
+      id: worker.id,
+      name: worker.name,
+      status,
+      workingHours: workingHoursDisplay,
+      utilization,
+      jobs: cleanJobs,
+      availableSlots,
+      totalWorkingMinutes: workingMinutes > 0 ? workingMinutes : 0,
+      totalScheduledMinutes: totalJobMinutes,
+      availabilityType,
+      availabilityReason,
+    }
+  })
 }
 
 // Helper functions

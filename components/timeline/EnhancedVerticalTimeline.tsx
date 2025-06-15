@@ -1,9 +1,8 @@
 'use client'
 
-import { useState } from 'react'
-import { Calendar, ChevronLeft, ChevronRight, RefreshCw, Users, Clock, CheckCircle, AlertCircle, Database, MapPin } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Calendar, ChevronLeft, ChevronRight, RefreshCw, Users, Clock, CheckCircle, AlertCircle, MapPin } from 'lucide-react'
 import { useRealTimelineData } from '@/hooks/useRealTimelineData'
-import { seedDatabaseWithTestData } from '@/lib/seed-data'
 import { sortTimeBlocks, formatDuration as utilFormatDuration } from '@/lib/time-utils'
 
 interface WorkerRowProps {
@@ -138,11 +137,72 @@ const WorkerRow = ({ worker }: WorkerRowProps) => {
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-4 md:p-6 shadow-sm hover:shadow-lg transition-all duration-200">
+      <style jsx>{`
+        .timeline-wrapper {
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+        .timeline-content {
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+          width: 100%;
+        }
+        .timeline-item {
+          width: 100%;
+        }
+        
+        /* Tablet and larger screens */
+        @media (min-width: 768px) {
+          .timeline-wrapper {
+            flex-direction: row;
+            overflow-x: auto;
+            overflow-y: hidden;
+            padding-bottom: 16px; /* For scrollbar spacing */
+            margin-bottom: -16px;
+            gap: 0;
+            scrollbar-width: thin;
+            scrollbar-color: #cbd5e1 #f1f5f9;
+          }
+          .timeline-wrapper::-webkit-scrollbar {
+            height: 8px;
+          }
+          .timeline-wrapper::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 4px;
+          }
+          .timeline-wrapper::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+          }
+          .timeline-wrapper::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+          }
+          .timeline-content {
+            flex-direction: row;
+            gap: 16px;
+            min-width: max-content;
+            padding: 0 4px; /* Small padding for visual separation */
+          }
+          .timeline-item {
+            width: 280px; /* Base width for tablet */
+            flex-shrink: 0;
+          }
+        }
+
+        /* Desktop */
+        @media (min-width: 1024px) {
+          .timeline-item {
+            width: 320px;
+          }
+        }
+      `}</style>
       {/* Worker Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
         <div className="flex items-center space-x-3 md:space-x-4">
           <div className="relative flex-shrink-0">
-            <div className="w-12 h-12 md:w-14 md:h-14 rounded-full bg-gradient-to-r from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-base md:text-lg shadow-lg">
+            <div className="w-12 h-12 md:w-14 md:h-14 rounded-full bg-gradient-to-r from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-base md:text-lg shadow-lg worker-avatar-mobile">
               {worker.name.split(' ').map(n => n[0]).join('')}
             </div>
             {/* Status indicator positioned on avatar */}
@@ -168,14 +228,14 @@ const WorkerRow = ({ worker }: WorkerRowProps) => {
           </div>
         </div>
         
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 worker-status-mobile">
           <StatusIndicator status={worker.status} />
           <UtilizationBadge utilization={worker.utilization} />
         </div>
       </div>
 
       {/* Working Hours Summary */}
-      <div className="grid grid-cols-3 gap-2 md:gap-4 mb-4 p-3 md:p-4 bg-gray-50 rounded-lg">
+      <div className="grid grid-cols-3 gap-2 md:gap-4 mb-4 p-3 md:p-4 bg-gray-50 rounded-lg worker-stats-mobile">
         <div className="text-center">
           <div className="text-lg md:text-2xl font-bold text-gray-900">{formatDuration(worker.totalWorkingMinutes)}</div>
           <div className="text-xs md:text-sm text-gray-600">Total Hours</div>
@@ -200,61 +260,24 @@ const WorkerRow = ({ worker }: WorkerRowProps) => {
             <div className="text-sm text-gray-600">
               {worker.jobs.length} jobs • {worker.availableSlots.length} available slots
             </div>
-            <div className="text-xs text-gray-500 flex items-center space-x-1">
-              <span>Scroll →</span>
-              <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
-            </div>
           </div>
         </div>
-
-        {/* Horizontal Scrollable Timeline */}
-        <div className="relative -mx-4 md:-mx-6">
-          <style jsx>{`
-            .timeline-scroll {
-              scrollbar-width: thin;
-              scrollbar-color: #cbd5e1 #f1f5f9;
-            }
-            .timeline-scroll::-webkit-scrollbar {
-              height: 8px;
-            }
-            .timeline-scroll::-webkit-scrollbar-track {
-              background: #f1f5f9;
-              border-radius: 4px;
-            }
-            .timeline-scroll::-webkit-scrollbar-thumb {
-              background: #cbd5e1;
-              border-radius: 4px;
-            }
-            .timeline-scroll::-webkit-scrollbar-thumb:hover {
-              background: #94a3b8;
-            }
-          `}</style>
-          <div className="timeline-scroll overflow-x-auto overflow-y-hidden pb-4">
-            <div className="flex space-x-3 px-4 md:px-6" style={{ width: 'max-content' }}>
-              {/* Create timeline blocks by combining jobs and available slots */}
+        
+        <div className="timeline-wrapper">
+          <div className="timeline-content">
               {(() => {
-                // Sort all time blocks (jobs + available slots) by start time
                 const allBlocks = [
                   ...worker.jobs.map(job => ({
-                    type: 'job' as const,
-                    startTime: job.startTime,
-                    title: job.title,
-                    client: job.client,
-                    duration: job.duration,
-                    status: job.status,
-                    color: job.color,
-                    id: job.id
+                    ...job,
+                    type: 'job' as const
                   })),
                   ...worker.availableSlots.map((slot, index) => ({
+                    ...slot,
                     type: 'available' as const,
-                    startTime: slot.startTime,
-                    endTime: slot.endTime,
-                    duration: formatDuration(slot.duration),
                     id: `slot-${index}`
                   }))
                 ]
 
-                // Use the utility function to sort chronologically
                 const sortedBlocks = sortTimeBlocks(allBlocks)
 
                 return sortedBlocks.map((block) => {
@@ -262,7 +285,7 @@ const WorkerRow = ({ worker }: WorkerRowProps) => {
                     return (
                       <div
                         key={block.id}
-                        className={`flex-shrink-0 p-3 md:p-4 rounded-lg border-l-4 ${block.color.replace('border-', 'border-l-')} bg-white shadow-sm hover:shadow-md transition-all duration-200 w-60 sm:w-72 md:w-80`}
+                        className={`timeline-item p-3 md:p-4 rounded-lg border-l-4 ${block.color.replace('border-', 'border-l-')} bg-white shadow-sm hover:shadow-md transition-all duration-200`}
                       >
                         <div className="flex items-start justify-between mb-2">
                           <div className="flex-1 min-w-0">
@@ -296,7 +319,7 @@ const WorkerRow = ({ worker }: WorkerRowProps) => {
                     return (
                       <div
                         key={block.id}
-                        className="flex-shrink-0 p-3 md:p-4 rounded-lg border border-green-200 bg-green-50 hover:bg-green-100 transition-colors w-52 sm:w-60 md:w-64"
+                        className="timeline-item p-3 md:p-4 rounded-lg border border-green-200 bg-green-50 hover:bg-green-100 transition-colors"
                       >
                         <div className="text-center">
                           <div className="w-6 h-6 md:w-8 md:h-8 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-2">
@@ -307,7 +330,7 @@ const WorkerRow = ({ worker }: WorkerRowProps) => {
                             {block.startTime} - {block.endTime}
                           </div>
                           <div className="text-xs text-green-600 mt-1">
-                            {block.duration} free
+                            {formatDuration(block.duration)} free
                           </div>
                         </div>
                       </div>
@@ -316,7 +339,6 @@ const WorkerRow = ({ worker }: WorkerRowProps) => {
                 })
               })()}
             </div>
-          </div>
         </div>
 
         {/* Timeline Summary */}
@@ -359,14 +381,29 @@ const DatePicker = ({ selectedDate, onDateChange }: {
   onDateChange: (date: Date) => void 
 }) => {
   const [isOpen, setIsOpen] = useState(false)
-  const [currentMonth, setCurrentMonth] = useState(new Date())
+  const [currentMonth, setCurrentMonth] = useState(selectedDate)
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
 
   const formatDate = (date: Date) => {
-    return date.toLocaleDateString('en-US', { 
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    }).format(date)
+  }
+
+  const changeMonth = (offset: number) => {
+    setCurrentMonth(prev => {
+      const newMonth = new Date(prev)
+      newMonth.setMonth(prev.getMonth() + offset)
+      return newMonth
     })
   }
 
@@ -375,31 +412,35 @@ const DatePicker = ({ selectedDate, onDateChange }: {
     const month = date.getMonth()
     const firstDay = new Date(year, month, 1)
     const lastDay = new Date(year, month + 1, 0)
-    const daysInMonth = lastDay.getDate()
-    const startingDayOfWeek = firstDay.getDay()
-
+    
     const days = []
-    
-    // Add empty cells for days before the first day of the month
-    for (let i = 0; i < startingDayOfWeek; i++) {
-      days.push(null)
+    for (let i = 1; i <= lastDay.getDate(); i++) {
+      days.push(new Date(year, month, i))
     }
     
-    // Add days of the month
-    for (let day = 1; day <= daysInMonth; day++) {
-      days.push(new Date(year, month, day))
+    const prefixDays = firstDay.getDay()
+    for (let i = 0; i < prefixDays; i++) {
+      days.unshift(null)
     }
-    
+
     return days
+  }
+
+  const getFirstDayOfMonth = (date: Date) => {
+    const year = date.getFullYear()
+    const month = date.getMonth()
+    return new Date(year, month, 1).getDay()
   }
 
   const isToday = (date: Date) => {
     const today = new Date()
-    return date.toDateString() === today.toDateString()
+    return today.getDate() === date.getDate() && today.getMonth() === date.getMonth() && today.getFullYear() === date.getFullYear()
   }
 
   const isSelected = (date: Date) => {
-    return date.toDateString() === selectedDate.toDateString()
+    return date.getDate() === selectedDate.getDate() &&
+           date.getMonth() === selectedDate.getMonth() &&
+           date.getFullYear() === selectedDate.getFullYear()
   }
 
   const handleDateSelect = (date: Date) => {
@@ -407,74 +448,112 @@ const DatePicker = ({ selectedDate, onDateChange }: {
     setIsOpen(false)
   }
 
-  const days = getDaysInMonth(currentMonth)
-  const monthNames = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-  ]
+  const calendarDays = () => {
+    const days = []
+    const daysInMonth = getDaysInMonth(currentMonth).length
+
+    // Days of the current month
+    for (let day = 1; day <= daysInMonth; day++) {
+      const currentDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day)
+      days.push(
+        <div key={`current-${day}`} className="flex items-center justify-center">
+          <button
+            onClick={() => handleDateSelect(currentDate)}
+            className={`
+              w-full h-full p-1 rounded-full text-sm transition-colors
+              md:w-8 md:h-8
+              ${isSelected(currentDate) ? 'bg-blue-600 text-white font-bold shadow-lg' : ''}
+              ${!isSelected(currentDate) && isToday(currentDate) ? 'bg-blue-100 text-blue-700' : ''}
+              ${!isSelected(currentDate) && !isToday(currentDate) ? 'text-gray-700 hover:bg-gray-100' : ''}
+            `}
+          >
+            {day}
+          </button>
+        </div>
+      )
+    }
+
+    return days
+  }
+  
+  const calendarModal = (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="relative w-full max-w-sm rounded-xl border bg-white p-4 shadow-2xl">
+        <div className="mb-4 flex items-center justify-between">
+          <button onClick={() => changeMonth(-1)} className="p-2 rounded-full hover:bg-gray-100">
+            <ChevronLeft className="h-5 w-5 text-gray-600" />
+          </button>
+          <div className="text-lg font-semibold text-gray-800">
+            {currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}
+          </div>
+          <button onClick={() => changeMonth(1)} className="p-2 rounded-full hover:bg-gray-100">
+            <ChevronRight className="h-5 w-5 text-gray-600" />
+          </button>
+        </div>
+        <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-gray-500 mb-2">
+          <div>Su</div>
+          <div>Mo</div>
+          <div>Tu</div>
+          <div>We</div>
+          <div>Th</div>
+          <div>Fr</div>
+          <div>Sa</div>
+        </div>
+        <div className="grid grid-cols-7 gap-y-1">
+          {calendarDays()}
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <button 
+            onClick={() => setIsOpen(false)}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 
   return (
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+        className="flex items-center space-x-2 rounded-lg border bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
       >
-        <Calendar className="w-4 h-4 text-gray-500" />
-        <span className="font-medium text-gray-900">{formatDate(selectedDate)}</span>
+        <Calendar className="h-5 w-5 text-gray-500" />
+        <span>{formatDate(selectedDate)}</span>
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-50 p-4 min-w-80">
-          {/* Month Navigation */}
-          <div className="flex items-center justify-between mb-4">
-            <button
-              onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
-              className="p-2 hover:bg-gray-100 rounded-lg"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <h3 className="font-semibold text-gray-900">
-              {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
-            </h3>
-            <button
-              onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}
-              className="p-2 hover:bg-gray-100 rounded-lg"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Day Labels */}
-          <div className="grid grid-cols-7 gap-1 mb-2">
-            {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(day => (
-              <div key={day} className="text-center text-sm font-medium text-gray-500 py-2">
-                {day}
+        isMobile ? calendarModal : (
+          <div className="absolute left-0 mt-2 z-20 w-72 origin-top-left rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+            <div className="p-3">
+              <div className="mb-3 flex items-center justify-between">
+                <button onClick={() => changeMonth(-1)} className="p-1.5 rounded-full hover:bg-gray-100">
+                  <ChevronLeft className="h-5 w-5 text-gray-500" />
+                </button>
+                <div className="text-sm font-semibold text-gray-900">
+                  {currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}
+                </div>
+                <button onClick={() => changeMonth(1)} className="p-1.5 rounded-full hover:bg-gray-100">
+                  <ChevronRight className="h-5 w-5 text-gray-500" />
+                </button>
               </div>
-            ))}
-          </div>
-
-          {/* Calendar Grid */}
-          <div className="grid grid-cols-7 gap-1">
-            {days.map((day, index) => (
-              <div key={index} className="h-10 flex items-center justify-center">
-                {day && (
-                  <button
-                    onClick={() => handleDateSelect(day)}
-                    className={`w-8 h-8 rounded-full text-sm font-medium transition-colors ${
-                      isSelected(day)
-                        ? 'bg-blue-600 text-white'
-                        : isToday(day)
-                        ? 'bg-blue-100 text-blue-600'
-                        : 'hover:bg-gray-100 text-gray-700'
-                    }`}
-                  >
-                    {day.getDate()}
-                  </button>
-                )}
+              <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-gray-500 mb-2">
+                <div>Su</div>
+                <div>Mo</div>
+                <div>Tu</div>
+                <div>We</div>
+                <div>Th</div>
+                <div>Fr</div>
+                <div>Sa</div>
               </div>
-            ))}
+              <div className="grid grid-cols-7 gap-y-1">
+                {calendarDays()}
+              </div>
+            </div>
           </div>
-        </div>
+        )
       )}
     </div>
   )
@@ -486,7 +565,6 @@ const DatePicker = ({ selectedDate, onDateChange }: {
  */
 export default function EnhancedVerticalTimeline() {
   const [selectedDate, setSelectedDate] = useState(new Date())
-  const [isSeeding, setIsSeeding] = useState(false)
   
   const { workersData, stats, isLoading, error, refreshData } = useRealTimelineData(selectedDate)
 
@@ -496,21 +574,23 @@ export default function EnhancedVerticalTimeline() {
     setSelectedDate(newDate)
   }
 
-  const handleSeedDatabase = async () => {
-    setIsSeeding(true)
-    try {
-      const result = await seedDatabaseWithTestData()
-      if (result.success) {
-        refreshData()
-        alert('✅ Database seeded successfully! Timeline will now show real data.')
-      } else {
-        alert('❌ Failed to seed database: ' + result.error)
-      }
-    } catch (error) {
-      alert('❌ Error seeding database: ' + (error instanceof Error ? error.message : 'Unknown error'))
-    } finally {
-      setIsSeeding(false)
-    }
+  const handleDateChange = (date: Date) => {
+    setSelectedDate(date)
+  }
+  
+  const formatDateForDisplay = (date: Date) => {
+    const today = new Date();
+    const tomorrow = new Date();
+    tomorrow.setDate(today.getDate() + 1);
+    
+    if (date.toDateString() === today.toDateString()) return 'Today';
+    if (date.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
+    
+    return new Intl.DateTimeFormat('en-US', {
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric'
+    }).format(date);
   }
 
   if (isLoading) {
@@ -525,50 +605,32 @@ export default function EnhancedVerticalTimeline() {
   }
 
   return (
-    <div className="space-y-4 md:space-y-6">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4 md:p-6">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Team Schedule</h1>
-            <p className="text-gray-600 mt-1 text-sm md:text-base">Manage your team's daily schedule and track utilization</p>
-          </div>
-          
-          {/* Date Navigation */}
-          <div className="flex flex-wrap items-center gap-2 md:gap-3">
-            <div className="flex items-center space-x-1 md:space-x-3">
-              <button
-                onClick={() => changeDate(-1)}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <ChevronLeft className="w-4 h-4 md:w-5 md:h-5" />
-              </button>
-              
-              <DatePicker selectedDate={selectedDate} onDateChange={setSelectedDate} />
-              
-              <button
-                onClick={() => changeDate(1)}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <ChevronRight className="w-4 h-4 md:w-5 md:h-5" />
-              </button>
-              
-              <button
-                onClick={refreshData}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                disabled={isLoading}
-              >
-                <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-              </button>
-            </div>
-            
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Team Timeline</h1>
+          <p className="text-base text-gray-600 mt-1">
+            {`Schedule for ${formatDateForDisplay(selectedDate)}`}
+          </p>
+        </div>
+        
+        <div className="flex items-center space-x-2">
+          <div className="flex items-center border rounded-md">
             <button
-              onClick={handleSeedDatabase}
-              disabled={isSeeding}
-              className="flex items-center space-x-2 px-3 md:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              onClick={() => changeDate(-1)}
+              className="p-2 border-r hover:bg-gray-100 transition-colors"
+              aria-label="Previous day"
             >
-              <Database className={`w-4 h-4 ${isSeeding ? 'animate-pulse' : ''}`} />
-              <span className="text-sm">{isSeeding ? 'Seeding...' : 'Add Test Data'}</span>
+              <ChevronLeft className="w-5 h-5 text-gray-600" />
+            </button>
+            <DatePicker selectedDate={selectedDate} onDateChange={handleDateChange} />
+            <button
+              onClick={() => changeDate(1)}
+              className="p-2 border-l hover:bg-gray-100 transition-colors"
+              aria-label="Next day"
+            >
+              <ChevronRight className="w-5 h-5 text-gray-600" />
             </button>
           </div>
         </div>
@@ -624,49 +686,38 @@ export default function EnhancedVerticalTimeline() {
         </div>
       </div>
 
-      {/* Error Display */}
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="flex items-start space-x-3">
-            <AlertCircle className="w-5 h-5 text-red-500 mt-0.5" />
-            <div className="flex-1">
-              <h3 className="text-red-800 font-medium">Database Error</h3>
-              <p className="text-red-700 text-sm mt-1">{error}</p>
-              <p className="text-red-600 text-sm mt-1">Showing demo data as fallback. Click "Add Test Data" to seed the database.</p>
-              <button 
-                onClick={refreshData}
-                className="mt-3 text-red-600 hover:text-red-800 text-sm underline"
-              >
-                Try Again
-              </button>
+      {/* Worker Rows */}
+      {error ? (
+        <div className="text-center py-12">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md mx-auto">
+            <div className="flex items-center justify-center space-x-2 mb-2">
+              <AlertCircle className="w-6 h-6 text-red-600" />
+              <span className="text-lg font-medium text-red-800">
+                Error Loading Data
+              </span>
             </div>
+            <p className="text-red-700">{error}</p>
           </div>
         </div>
-      )}
-
-      {/* Workers Timeline - Vertical Stack */}
-      <div className="space-y-4 md:space-y-6">
-        {workersData.map((worker) => (
-          <WorkerRow key={worker.id} worker={worker} />
-        ))}
-      </div>
-
-      {/* Empty State */}
-      {workersData.length === 0 && !isLoading && (
-        <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
-          <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Users className="w-10 h-10 text-blue-600" />
+      ) : workersData.length > 0 ? (
+        <div className="space-y-6">
+          {workersData.map(worker => (
+            <WorkerRow key={worker.id} worker={worker} />
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-12">
+          <div className="bg-orange-50 border border-orange-200 rounded-lg p-6 max-w-md mx-auto">
+            <div className="flex items-center justify-center space-x-2 mb-2">
+              <AlertCircle className="w-6 h-6 text-orange-600" />
+              <span className="text-lg font-medium text-orange-800">
+                No Schedule Data
+              </span>
+            </div>
+            <p className="text-orange-700">
+              No workers or availability information found for this day.
+            </p>
           </div>
-          <h3 className="text-xl font-medium text-gray-900 mb-2">No workers found</h3>
-          <p className="text-gray-600 mb-4">Add some test data to see the timeline in action.</p>
-          <button
-            onClick={handleSeedDatabase}
-            disabled={isSeeding}
-            className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-          >
-            <Database className="w-4 h-4" />
-            <span>Add Test Data</span>
-          </button>
         </div>
       )}
     </div>

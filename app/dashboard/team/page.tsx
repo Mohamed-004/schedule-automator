@@ -1,24 +1,20 @@
 'use client';
 
 import { useState } from 'react';
-import { useSupabase } from '@/lib/SupabaseProvider';
-import { useBusiness } from '@/hooks/use-business';
-import { useWorkers } from '@/hooks/use-workers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
-import { Trash2, Plus, User, Mail, Phone, UserCircle, Shield, Calendar, Clock } from 'lucide-react';
+import { Trash2, Plus, User, Mail, Phone, UserCircle, Shield, Calendar } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type { Worker } from '@/lib/types';
 import WorkerCardSkeleton from '@/components/team/WorkerCardSkeleton';
+import { useTeamData } from './useTeamData';
 
 export default function TeamPage() {
   const router = useRouter();
-  const { supabase } = useSupabase();
-  const { business, loading: businessLoading } = useBusiness();
-  const { workers, loading, error: workersError, addWorker, deleteWorker, refresh } = useWorkers();
+  const { business, workers, loading, error: teamError, addWorker, deleteWorker } = useTeamData();
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState<Omit<Worker, 'id' | 'business_id' | 'created_at' | 'updated_at' | 'status'>>({ 
     name: '', 
@@ -41,13 +37,7 @@ export default function TeamPage() {
     setError(null);
 
     try {
-      const workerData = { 
-        ...form,
-        business_id: business.id,
-        status: 'active',
-      };
-
-      const result = await addWorker(workerData as any);
+      const result = await addWorker(form);
       
       if (!result) {
         setError('Failed to add worker. Please try again.');
@@ -72,7 +62,7 @@ export default function TeamPage() {
     }
   };
 
-  if (businessLoading) {
+  if (loading) {
     return (
       <div className="w-full h-[50vh] flex items-center justify-center">
         <div className="text-center">
@@ -113,19 +103,13 @@ export default function TeamPage() {
         </Button>
       </div>
       
-      {workersError && (
+      {teamError && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6">
-          Error loading workers: {workersError.message}
+          Error loading workers: {teamError.message}
         </div>
       )}
       
-      {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <WorkerCardSkeleton key={i} />
-          ))}
-        </div>
-      ) : workers.length === 0 ? (
+      {workers.length === 0 ? (
         <Card className="border border-dashed border-gray-300 bg-gray-50">
           <CardContent className="p-10 text-center">
             <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
@@ -248,49 +232,35 @@ export default function TeamPage() {
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="phone" className="font-medium">Phone Number</Label>
+                  <Label htmlFor="phone" className="font-medium">Phone Number (Optional)</Label>
                   <Input 
                     id="phone" 
                     name="phone" 
-                    type="tel" 
+                    type="tel"
                     value={form.phone} 
                     onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} 
-                    placeholder="Enter phone number"
+                    placeholder="Enter phone number" 
                     className="border-gray-300"
-                    required 
                   />
                 </div>
                 
                 <div className="space-y-2">
                   <Label htmlFor="role" className="font-medium">Role</Label>
-                  <Select 
-                    value={form.role} 
-                    onValueChange={value => setForm(f => ({ ...f, role: value as 'technician' | 'dispatcher' | 'manager' }))}
-                  >
-                    <SelectTrigger id="role">
-                      <SelectValue placeholder="Select role" />
+                  <Select name="role" value={form.role} onValueChange={value => setForm(f => ({ ...f, role: value }))}>
+                    <SelectTrigger className="border-gray-300">
+                      <SelectValue placeholder="Select a role" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="technician">Technician</SelectItem>
-                      <SelectItem value="dispatcher">Dispatcher</SelectItem>
                       <SelectItem value="manager">Manager</SelectItem>
+                      <SelectItem value="dispatcher">Dispatcher</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 
-                <div className="flex justify-end gap-3 mt-6">
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    onClick={() => setShowAdd(false)}
-                    disabled={saving}
-                  >
-                    Cancel
-                  </Button>
-                  <Button 
-                    type="submit"
-                    disabled={saving}
-                  >
+                <div className="flex justify-end gap-2 pt-4">
+                  <Button type="button" variant="ghost" onClick={() => setShowAdd(false)}>Cancel</Button>
+                  <Button type="submit" disabled={saving} className="bg-primary hover:bg-primary/90">
                     {saving ? 'Adding...' : 'Add Worker'}
                   </Button>
                 </div>

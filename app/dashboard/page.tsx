@@ -1,7 +1,5 @@
 'use client'
 
-import { useBusiness } from '@/hooks/use-business'
-import { useJobs } from '@/hooks/use-jobs'
 import JobCard from '@/components/dashboard/job-card'
 import JobForm from '@/components/dashboard/job-form'
 import { useState, useEffect, useRef } from 'react'
@@ -14,13 +12,24 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useRouter } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
+import { useDashboardData } from './useDashboardData'
 
 export default function DashboardPage() {
-  // All hooks at the top!
   const router = useRouter()
   const { supabase, session, user, loading: authLoading } = useSupabase();
-  const { business, loading: businessLoading, createBusiness } = useBusiness()
-  const { jobs, loading: jobsLoading, error, refresh } = useJobs()
+  const { 
+    business, 
+    jobs, 
+    workers,
+    clients,
+    loading: dataLoading, 
+    error, 
+    createBusiness, 
+    addJob,
+    updateJob,
+    deleteJob,
+    refresh 
+  } = useDashboardData();
   const [showAddJob, setShowAddJob] = useState(false)
   const [jobError, setJobError] = useState<string | null>(null)
   const [savingJob, setSavingJob] = useState(false)
@@ -37,7 +46,6 @@ export default function DashboardPage() {
   })
   const [savingBusiness, setSavingBusiness] = useState(false)
   const [businessError, setBusinessError] = useState<string | null>(null)
-  // New state for filters, sort, selection, error, etc.
   const [statusFilter, setStatusFilter] = useState<'all'|'active'|'cancelled'>('all');
   const [sortBy, setSortBy] = useState<'time-asc'|'time-desc'|'worker-az'>('time-asc');
   const [selectedJobs, setSelectedJobs] = useState<string[]>([]);
@@ -50,15 +58,12 @@ export default function DashboardPage() {
   const [metrics, setMetrics] = useState({active: 0, cancelled: 0, availableWorkers: 0});
   const jobListRef = useRef<HTMLDivElement>(null);
 
-  // Use effect for redirects instead of during render to prevent reload loops
   useEffect(() => {
-    // Redirect to login if not authenticated and done loading
     if (!authLoading && !session && !user) {
       router.push('/auth/login')
     }
   }, [authLoading, session, user, router])
 
-  // Metrics calculation (stubbed for now)
   useEffect(() => {
     const today = new Date();
     const todayJobs = jobs?.filter(job => {
@@ -73,36 +78,12 @@ export default function DashboardPage() {
     });
   }, [jobs]);
 
-  // Show loading while auth is being initialized
-  if (authLoading) {
+  if (authLoading || dataLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p className="text-lg">Loading...</p>
-        </div>
-      </div>
-    )
-  }
-
-  // Wait for auth check instead of redirecting during render
-  if (!session || !user) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-lg">Checking authentication...</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (businessLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-lg">Loading dashboard...</p>
         </div>
       </div>
     )
@@ -213,13 +194,30 @@ export default function DashboardPage() {
     )
   }
 
-  if (jobsLoading) {
+  if (jobs.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-lg">Loading jobs...</p>
-        </div>
+        <Card className="w-full max-w-md">
+          <CardContent className="p-6">
+            <div className="text-center py-6">
+              <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                <Calendar className="h-8 w-8 text-primary" />
+              </div>
+              <h3 className="text-lg font-medium mb-2">No jobs scheduled for today</h3>
+              <p className="text-gray-500 mb-6 max-w-md mx-auto">
+                Add your first job or go to the calendar view to schedule appointments for other days.
+              </p>
+              <div className="flex justify-center gap-4">
+                <Button onClick={() => setShowAddJob(true)} className="flex items-center gap-2">
+                  <Plus className="h-4 w-4" /> Add Job
+                </Button>
+                <Link href="/dashboard/calendar">
+                  <Button variant="outline">View Calendar</Button>
+                </Link>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     )
   }
@@ -234,14 +232,12 @@ export default function DashboardPage() {
     return jobDate.toDateString() === today.toDateString()
   }) || []
 
-  // Filter, sort, and metrics logic (stubbed for now)
   const filteredJobs = todayJobs.filter(job => {
     if (statusFilter === 'all') return true;
     if (statusFilter === 'active') return job.status === 'scheduled' || job.status === 'in_progress';
     if (statusFilter === 'cancelled') return job.status === 'cancelled';
     return true;
   });
-  // Sort logic
   filteredJobs.sort((a, b) => {
     if (sortBy === 'time-asc') return new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime();
     if (sortBy === 'time-desc') return new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime();
@@ -249,35 +245,16 @@ export default function DashboardPage() {
     return 0;
   });
 
-  // Error banner retry
   const handleRetry = () => {
     setErrorBanner(null);
     refresh && refresh();
   };
 
-  // Bulk actions
   const handleBulkAction = (action: 'cancel'|'reassign'|'complete') => {
-    // TODO: Implement bulk action logic
     setSelectedJobs([]);
     setShowBulkBar(false);
   };
 
-  // Keyboard shortcuts (stub)
-  // TODO: Add keyboard navigation logic
-
-  // Analytics hooks (stub)
-  // TODO: Track card clicks, filter usage, drag, etc.
-
-  // Drag-to-reschedule (stub)
-  // TODO: Implement drag-and-drop logic
-
-  // Real-time updates (stub)
-  // TODO: Implement websocket or polling for real-time job status
-
-  // Virtual list (stub)
-  // TODO: Use virtual list for >100 jobs
-
-  // Empty state illustration
   const EmptyDay = () => (
     <Card>
       <CardContent className="p-8 text-center">
@@ -300,7 +277,6 @@ export default function DashboardPage() {
     </Card>
   );
 
-  // Error banner
   const ErrorBanner = () => errorBanner && (
     <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4 flex items-center justify-between">
       <span>{errorBanner}</span>
@@ -311,7 +287,6 @@ export default function DashboardPage() {
     </div>
   );
 
-  // Loading skeletons
   const LoadingSkeletons = () => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       {[...Array(3)].map((_, i) => (
@@ -320,7 +295,6 @@ export default function DashboardPage() {
     </div>
   );
 
-  // Metrics chips
   const MetricsChips = () => (
     <div className="flex gap-3 mb-4">
       <Badge className="bg-blue-50 text-blue-700 px-3 py-1">{metrics.active} Active Jobs</Badge>
@@ -329,7 +303,6 @@ export default function DashboardPage() {
     </div>
   );
 
-  // Status filter & sort bar
   const FilterSortBar = () => (
     <div className="flex flex-wrap items-center gap-2 mb-4">
       <div className="flex gap-1">
@@ -361,7 +334,6 @@ export default function DashboardPage() {
     </div>
   );
 
-  // Bulk actions bar
   const BulkActionsBar = () => showBulkBar && (
     <div className="fixed bottom-0 left-0 w-full flex justify-center z-40 pointer-events-none">
       <div className="bg-white border border-gray-200 shadow-xl rounded-t-2xl sm:rounded-full px-4 py-3 sm:px-6 sm:py-3 flex flex-col sm:flex-row gap-2 sm:gap-4 items-center max-w-2xl w-full m-2 pointer-events-auto">
@@ -382,12 +354,9 @@ export default function DashboardPage() {
     </div>
   );
 
-  // Job card wrapper with checkbox, drag, analytics, etc.
   const JobCardWrapper = ({ job }: { job: any }) => (
     <div className="relative group" tabIndex={0} aria-label={`Job: ${job.title}`}
-      // TODO: Keyboard navigation, analytics, drag, etc.
     >
-      {/* Checkbox is now handled by JobCard itself for a cleaner look */}
       <JobCard
         job={job}
         onUpdate={refresh}
@@ -402,11 +371,9 @@ export default function DashboardPage() {
           }
         }}
       />
-      {/* Drag handle (stub) */}
       <div className="absolute top-3 right-3 cursor-move opacity-0 group-hover:opacity-100" aria-label="Drag to reschedule">
         <Loader2 className="h-4 w-4 text-gray-300" />
       </div>
-      {/* Conflict badge (stub) */}
       {false && (
         <div className="absolute top-3 right-10">
           <AlertCircle className="h-5 w-5 text-red-500" aria-label="Conflict: Worker double-booked or over shift" />
@@ -415,36 +382,19 @@ export default function DashboardPage() {
     </div>
   );
 
-  const handleAddJob = async (form: any) => {
-    if (!supabase) return
-    
-    setSavingJob(true)
-    setJobError(null)
-    
+  const handleAddJob = async (jobData: any) => {
+    setSavingJob(true);
+    setJobError(null);
     try {
-      const { error: insertError } = await supabase.from('jobs').insert([
-        {
-          ...form,
-          business_id: business.id,
-          scheduled_at: new Date(form.scheduled_at).toISOString(),
-          duration_hours: form.duration_hours ? parseFloat(form.duration_hours) : null,
-        },
-      ])
-      
-      if (insertError) {
-        setJobError(insertError.message)
-        return
-      }
-      
-      setShowAddJob(false)
-      refresh && refresh()
+        await addJob(jobData);
+        setShowAddJob(false);
+        refresh();
     } catch (error) {
-      setJobError('An error occurred while adding the job')
-      console.error('Error adding job:', error)
+        setJobError('Failed to add job.');
     } finally {
-      setSavingJob(false)
+        setSavingJob(false);
     }
-  }
+  };
 
   return (
     <div className="p-6">
@@ -470,7 +420,6 @@ export default function DashboardPage() {
           {filteredJobs.length === 0 ? <EmptyDay /> : filteredJobs.map(job => <JobCardWrapper key={job.id} job={job} />)}
         </div>
       )}
-      {/* Add Job Modal */}
       {showAddJob && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="w-full max-w-md bg-transparent rounded-none shadow-none flex flex-col" style={{ maxHeight: '90vh' }}>
@@ -485,8 +434,10 @@ export default function DashboardPage() {
                   )}
                   <div className="px-8 pb-8">
                     <JobForm
-                      onSubmit={handleAddJob}
-                      onCancel={() => setShowAddJob(false)}
+                      workers={workers}
+                      clients={clients}
+                      onClose={() => setShowAddJob(false)}
+                      onSave={handleAddJob}
                       saving={savingJob}
                     />
                   </div>
@@ -496,7 +447,15 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
-      {/* Support Modal (stub) */}
+      {todayJobs.length === 0 && showAddJob && (
+        <JobForm
+          workers={workers}
+          clients={clients}
+          onClose={() => setShowAddJob(false)}
+          onSave={handleAddJob}
+          saving={savingJob}
+        />
+      )}
       {showSupport && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <Card className="w-full max-w-md">

@@ -1,15 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { useJobs } from '@/hooks/use-jobs';
 import Calendar from '@/components/schedule/calendar';
 import JobList from '@/components/schedule/job-list';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { motion } from 'framer-motion';
 import { CalendarIcon, Calendar as CalendarCheck } from 'lucide-react';
+import { useCalendarData } from './useCalendarData';
 
 export default function CalendarPage() {
-  const { jobs, loading } = useJobs();
+  const { jobs, workers, clients, loading } = useCalendarData();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
   const jobsForSelectedDate = jobs?.filter(job => {
@@ -84,7 +84,7 @@ export default function CalendarPage() {
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
                 </div>
               ) : (
-                <JobList jobs={jobsForSelectedDate} />
+                <JobList jobs={jobsForSelectedDate} workers={workers} clients={clients} />
               )}
             </CardContent>
           </Card>

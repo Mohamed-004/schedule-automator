@@ -1,53 +1,31 @@
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
+'use client'
+
 import { AssignmentForm } from './components/assignment-form';
-import { getBusinessId } from '@/lib/getBusinessId';
-import { createClient } from '@/lib/supabase/server';
+import { useAssignJobsData } from './useAssignJobsData';
 
-export const dynamic = 'force-dynamic';
+export default function AssignJobsPage() {
+  const { clients, workers, jobTypes, isLoading, error } = useAssignJobsData();
 
-export default async function AssignJobsPage() {
-  const supabase = await createClient();
-
-  // Use getUser() instead of getSession() for security
-  const { data: { user } } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect('/login');
+  if (isLoading) {
+    return (
+        <div className="flex justify-center items-center h-screen">
+            <div className="h-16 w-16 animate-spin rounded-full border-4 border-solid border-blue-500 border-t-transparent"></div>
+        </div>
+    );
   }
 
-  const businessId = await getBusinessId(user.id);
-
-  if (!businessId) {
+  if (error) {
     return (
       <div className="p-6 bg-gray-50/50">
         <div className="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-sm border">
-            <h1 className="text-xl font-semibold text-gray-800">Cannot Create Job</h1>
-            <p className="mt-2 text-sm text-gray-600">
-            You must be associated with a business to assign jobs. Please contact your administrator or create a business profile in the settings.
+            <h1 className="text-xl font-semibold text-red-800">An Error Occurred</h1>
+            <p className="mt-2 text-sm text-red-600">
+                {error}
             </p>
         </div>
       </div>
     );
   }
-
-  // Fetch clients and workers for the form dropdowns
-  const { data: clients } = await supabase
-    .from('clients')
-    .select('id, name')
-    .eq('business_id', businessId);
-
-  const { data: workers } = await supabase
-    .from('workers')
-    .select('id, name, role')
-    .eq('business_id', businessId)
-    .eq('status', 'active');
-
-  // Fetch job types for the form
-  const { data: jobTypes } = await supabase
-    .from('job_types')
-    .select('id, name, description, required_skills');
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
@@ -61,9 +39,9 @@ export default async function AssignJobsPage() {
                 </p>
             </div>
             <AssignmentForm
-                clients={clients || []}
-                workers={workers || []}
-                jobTypes={jobTypes || []}
+                clients={clients}
+                workers={workers}
+                jobTypes={jobTypes}
             />
         </div>
     </div>

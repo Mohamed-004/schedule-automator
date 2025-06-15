@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { cookies } from 'next/headers';
 import { z } from 'zod';
-import { getBusinessIdWithSupa } from '@/lib/getBusinessId';
+import { AppSupabaseClient } from '@/lib/supabase/types';
 import { revalidatePath } from 'next/cache';
 
 const createJobSchema = z.object({
@@ -24,13 +24,26 @@ const createClientSchema = z.object({
     address: z.string().optional(),
 });
 
+async function getBusinessId(supabase: AppSupabaseClient, user: any): Promise<string> {
+  const { data: business, error } = await supabase
+    .from('businesses')
+    .select('id')
+    .eq('user_id', user.id)
+    .single();
+  
+  if (error || !business) {
+    throw new Error('Could not find business for user.');
+  }
+  return business.id;
+}
+
 export async function createNewClient(formData: FormData) {
     const supabase = await createClient();
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { success: false, error: 'Authentication failed.' };
 
-    const businessId = await getBusinessIdWithSupa(user.id, supabase);
+    const businessId = await getBusinessId(supabase, user);
     if (!businessId) return { success: false, error: "Could not find business." };
 
     const validation = createClientSchema.safeParse(Object.fromEntries(formData.entries()));
@@ -67,7 +80,7 @@ export async function getAvailableWorkersAction(startTime: string, endTime: stri
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { success: false, error: 'Authentication failed.' };
 
-    const businessId = await getBusinessIdWithSupa(user.id, supabase);
+    const businessId = await getBusinessId(supabase, user);
     if (!businessId) return { success: false, error: "Could not find business." };
     
     const { data, error } = await supabase.rpc('get_available_workers', {
@@ -135,7 +148,7 @@ export async function createJob(jobData: z.infer<typeof createJobSchema>) {
     scheduledAt.setHours(hours, minutes, 0, 0);
 
     try {
-        const businessId = await getBusinessIdWithSupa(user.id, supabase);
+        const businessId = await getBusinessId(supabase, user);
         if (!businessId) {
             return { success: false, error: "Could not find business associated with your account." };
         }
@@ -178,7 +191,7 @@ export async function getRecommendedWorkersAction(startTime: string, endTime: st
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { success: false, error: 'Authentication failed.' };
 
-    const businessId = await getBusinessIdWithSupa(user.id, supabase);
+    const businessId = await getBusinessId(supabase, user);
     if (!businessId) return { success: false, error: "Could not find business." };
     
     try {
