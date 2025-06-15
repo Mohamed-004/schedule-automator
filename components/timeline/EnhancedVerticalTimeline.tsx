@@ -1,9 +1,14 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Calendar, ChevronLeft, ChevronRight, RefreshCw, Users, Clock, CheckCircle, AlertCircle, MapPin } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Calendar, ChevronLeft, ChevronRight, RefreshCw, Users, Clock, CheckCircle, AlertCircle, MapPin, Send, MoreHorizontal, Zap } from 'lucide-react'
 import { useRealTimelineData } from '@/hooks/useRealTimelineData'
 import { sortTimeBlocks, formatDuration as utilFormatDuration } from '@/lib/time-utils'
+import { WorkerSwapModal } from './WorkerSwapModal'
+import { SmartRescheduleModal } from './SmartRescheduleModal'
+import { SmartAssignmentModal } from './SmartAssignmentModal'
+import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
 interface WorkerRowProps {
   worker: {
@@ -30,6 +35,10 @@ interface WorkerRowProps {
     totalWorkingMinutes: number
     totalScheduledMinutes: number
   }
+  onSwapWorker?: (jobId: string) => void
+  onReschedule?: (jobId: string) => void
+  onAvailabilityClick?: (workerId: string, workerName: string, timeSlot: { startTime: string; endTime: string }) => void
+  selectedDate: Date
 }
 
 const StatusIndicator = ({ status }: { status: 'busy' | 'scheduled' | 'available' | 'unavailable' }) => {
@@ -130,10 +139,16 @@ const UtilizationBadge = ({ utilization }: { utilization: number }) => {
   )
 }
 
-const WorkerRow = ({ worker }: WorkerRowProps) => {
+const WorkerRow = ({ worker, onSwapWorker, onReschedule, onAvailabilityClick, selectedDate }: WorkerRowProps) => {
   const [showDetails, setShowDetails] = useState(false)
 
   const formatDuration = utilFormatDuration
+
+  const handleAvailabilityClick = (timeSlot: { startTime: string; endTime: string }) => {
+    if (onAvailabilityClick) {
+      onAvailabilityClick(worker.id, worker.name, timeSlot)
+    }
+  }
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-4 md:p-6 shadow-sm hover:shadow-lg transition-all duration-200">
@@ -313,16 +328,48 @@ const WorkerRow = ({ worker }: WorkerRowProps) => {
                             <span className="truncate">{block.client}</span>
                           </div>
                         </div>
+                        
+                        {/* Action buttons for scheduled jobs */}
+                        {block.status === 'scheduled' && (onSwapWorker || onReschedule) && (
+                          <div className="mt-3 pt-3 border-t border-gray-100">
+                            <div className="flex items-center justify-end space-x-2">
+                              {onSwapWorker && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => onSwapWorker(block.id)}
+                                  className="text-xs"
+                                >
+                                  <Users className="w-3 h-3 mr-1" />
+                                  Swap Worker
+                                </Button>
+                              )}
+                              {onReschedule && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => onReschedule(block.id)}
+                                  className="text-xs"
+                                >
+                                  <Send className="w-3 h-3 mr-1" />
+                                  Reschedule
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )
                   } else {
                     return (
                       <div
                         key={block.id}
-                        className="timeline-item p-3 md:p-4 rounded-lg border border-green-200 bg-green-50 hover:bg-green-100 transition-colors"
+                        className="timeline-item p-3 md:p-4 rounded-lg border-2 border-green-200 bg-green-50 hover:bg-green-100 hover:border-green-300 transition-all duration-200 cursor-pointer group"
+                        onClick={() => handleAvailabilityClick({ startTime: block.startTime, endTime: block.endTime })}
+                        title="Click to assign a job to this time slot"
                       >
-                        <div className="text-center">
-                          <div className="w-6 h-6 md:w-8 md:h-8 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-2">
+                        <div className="text-center relative">
+                          <div className="w-6 h-6 md:w-8 md:h-8 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-2 group-hover:bg-green-600 transition-colors">
                             <Clock className="w-3 h-3 md:w-4 md:h-4 text-white" />
                           </div>
                           <h5 className="font-semibold text-green-800 mb-1 text-sm md:text-base">Available</h5>
@@ -331,6 +378,15 @@ const WorkerRow = ({ worker }: WorkerRowProps) => {
                           </div>
                           <div className="text-xs text-green-600 mt-1">
                             {formatDuration(block.duration)} free
+                          </div>
+                          
+                          {/* Smart Assignment Indicator */}
+                          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-green-100 bg-opacity-90 rounded-lg">
+                            <div className="flex items-center gap-1 bg-green-600 text-white text-xs px-2 py-1 rounded shadow-lg font-medium">
+                              <Zap className="w-3 h-3" />
+                              <span className="hidden sm:inline">Click to Assign Job</span>
+                              <span className="sm:hidden">Assign</span>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -352,26 +408,11 @@ const WorkerRow = ({ worker }: WorkerRowProps) => {
             <span>Available Slots ({worker.availableSlots.length})</span>
           </div>
           <div className="flex items-center space-x-2">
-            <Clock className="w-3 h-3" />
-            <span>Working: {worker.workingHours}</span>
+            <Zap className="w-3 h-3 text-green-600" />
+            <span className="text-green-600 font-medium">Click available slots to assign jobs</span>
           </div>
         </div>
       </div>
-
-      {/* Empty State - Only show if no jobs AND no available slots */}
-      {worker.jobs.length === 0 && worker.availableSlots.length === 0 && (
-        <div className="text-center py-8">
-          <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <AlertCircle className="w-8 h-8 text-orange-600" />
-          </div>
-          <h4 className="text-lg font-medium text-gray-900 mb-2">Not working today</h4>
-          <p className="text-gray-600">No jobs or availability information found</p>
-          <div className="mt-4 inline-flex items-center px-4 py-2 bg-orange-50 text-orange-700 rounded-lg border border-orange-200">
-            <Clock className="w-4 h-4 mr-2" />
-            <span className="font-medium">Working Hours: {worker.workingHours}</span>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -381,8 +422,9 @@ const DatePicker = ({ selectedDate, onDateChange }: {
   onDateChange: (date: Date) => void 
 }) => {
   const [isOpen, setIsOpen] = useState(false)
-  const [currentMonth, setCurrentMonth] = useState(selectedDate)
+  const [currentMonth, setCurrentMonth] = useState(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1))
   const [isMobile, setIsMobile] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768)
@@ -391,20 +433,29 @@ const DatePicker = ({ selectedDate, onDateChange }: {
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
   const formatDate = (date: Date) => {
     return new Intl.DateTimeFormat('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
+      weekday: isMobile ? 'short' : 'long',
+      month: isMobile ? 'short' : 'long',
+      day: 'numeric'
     }).format(date)
   }
 
   const changeMonth = (offset: number) => {
-    setCurrentMonth(prev => {
-      const newMonth = new Date(prev)
-      newMonth.setMonth(prev.getMonth() + offset)
-      return newMonth
-    })
+    const newMonth = new Date(currentMonth)
+    newMonth.setMonth(newMonth.getMonth() + offset)
+    setCurrentMonth(newMonth)
   }
 
   const getDaysInMonth = (date: Date) => {
@@ -412,35 +463,35 @@ const DatePicker = ({ selectedDate, onDateChange }: {
     const month = date.getMonth()
     const firstDay = new Date(year, month, 1)
     const lastDay = new Date(year, month + 1, 0)
-    
-    const days = []
-    for (let i = 1; i <= lastDay.getDate(); i++) {
-      days.push(new Date(year, month, i))
-    }
-    
-    const prefixDays = firstDay.getDay()
-    for (let i = 0; i < prefixDays; i++) {
-      days.unshift(null)
-    }
+    const daysInMonth = lastDay.getDate()
+    const startingDayOfWeek = firstDay.getDay()
 
+    const days = []
+    
+    // Add empty cells for days before the first day of the month
+    for (let i = 0; i < startingDayOfWeek; i++) {
+      days.push(null)
+    }
+    
+    // Add all days of the month
+    for (let day = 1; day <= daysInMonth; day++) {
+      days.push(new Date(year, month, day))
+    }
+    
     return days
   }
 
   const getFirstDayOfMonth = (date: Date) => {
-    const year = date.getFullYear()
-    const month = date.getMonth()
-    return new Date(year, month, 1).getDay()
+    return new Date(date.getFullYear(), date.getMonth(), 1)
   }
 
   const isToday = (date: Date) => {
     const today = new Date()
-    return today.getDate() === date.getDate() && today.getMonth() === date.getMonth() && today.getFullYear() === date.getFullYear()
+    return date.toDateString() === today.toDateString()
   }
 
   const isSelected = (date: Date) => {
-    return date.getDate() === selectedDate.getDate() &&
-           date.getMonth() === selectedDate.getMonth() &&
-           date.getFullYear() === selectedDate.getFullYear()
+    return date.toDateString() === selectedDate.toDateString()
   }
 
   const handleDateSelect = (date: Date) => {
@@ -449,111 +500,86 @@ const DatePicker = ({ selectedDate, onDateChange }: {
   }
 
   const calendarDays = () => {
-    const days = []
-    const daysInMonth = getDaysInMonth(currentMonth).length
-
-    // Days of the current month
-    for (let day = 1; day <= daysInMonth; day++) {
-      const currentDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day)
-      days.push(
-        <div key={`current-${day}`} className="flex items-center justify-center">
-          <button
-            onClick={() => handleDateSelect(currentDate)}
-            className={`
-              w-full h-full p-1 rounded-full text-sm transition-colors
-              md:w-8 md:h-8
-              ${isSelected(currentDate) ? 'bg-blue-600 text-white font-bold shadow-lg' : ''}
-              ${!isSelected(currentDate) && isToday(currentDate) ? 'bg-blue-100 text-blue-700' : ''}
-              ${!isSelected(currentDate) && !isToday(currentDate) ? 'text-gray-700 hover:bg-gray-100' : ''}
-            `}
-          >
-            {day}
-          </button>
-        </div>
-      )
+    const days = getDaysInMonth(currentMonth)
+    const weeks = []
+    
+    for (let i = 0; i < days.length; i += 7) {
+      weeks.push(days.slice(i, i + 7))
     }
-
-    return days
+    
+    return weeks
   }
-  
-  const calendarModal = (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="relative w-full max-w-sm rounded-xl border bg-white p-4 shadow-2xl">
-        <div className="mb-4 flex items-center justify-between">
-          <button onClick={() => changeMonth(-1)} className="p-2 rounded-full hover:bg-gray-100">
-            <ChevronLeft className="h-5 w-5 text-gray-600" />
-          </button>
-          <div className="text-lg font-semibold text-gray-800">
-            {currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}
-          </div>
-          <button onClick={() => changeMonth(1)} className="p-2 rounded-full hover:bg-gray-100">
-            <ChevronRight className="h-5 w-5 text-gray-600" />
-          </button>
-        </div>
-        <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-gray-500 mb-2">
-          <div>Su</div>
-          <div>Mo</div>
-          <div>Tu</div>
-          <div>We</div>
-          <div>Th</div>
-          <div>Fr</div>
-          <div>Sa</div>
-        </div>
-        <div className="grid grid-cols-7 gap-y-1">
-          {calendarDays()}
-        </div>
-        <div className="mt-4 flex justify-end gap-2">
-          <button 
-            onClick={() => setIsOpen(false)}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
-  )
 
   return (
-    <div className="relative">
+    <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center space-x-2 rounded-lg border bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+        className="flex items-center space-x-2 px-3 md:px-4 py-2 text-sm md:text-base font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors min-w-0"
       >
-        <Calendar className="h-5 w-5 text-gray-500" />
-        <span>{formatDate(selectedDate)}</span>
+        <Calendar className="w-4 h-4 md:w-5 md:h-5 text-gray-500 flex-shrink-0" />
+        <span className="truncate">{formatDate(selectedDate)}</span>
       </button>
 
       {isOpen && (
-        isMobile ? calendarModal : (
-          <div className="absolute left-0 mt-2 z-20 w-72 origin-top-left rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
-            <div className="p-3">
-              <div className="mb-3 flex items-center justify-between">
-                <button onClick={() => changeMonth(-1)} className="p-1.5 rounded-full hover:bg-gray-100">
-                  <ChevronLeft className="h-5 w-5 text-gray-500" />
-                </button>
-                <div className="text-sm font-semibold text-gray-900">
-                  {currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}
+        <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 min-w-[280px]">
+          <div className="p-4">
+            {/* Month navigation */}
+            <div className="flex items-center justify-between mb-4">
+              <button
+                onClick={() => changeMonth(-1)}
+                className="p-1 hover:bg-gray-100 rounded transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <h3 className="font-semibold text-gray-900">
+                {new Intl.DateTimeFormat('en-US', { 
+                  month: 'long', 
+                  year: 'numeric' 
+                }).format(currentMonth)}
+              </h3>
+              <button
+                onClick={() => changeMonth(1)}
+                className="p-1 hover:bg-gray-100 rounded transition-colors"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Calendar grid */}
+            <div className="grid grid-cols-7 gap-1 mb-2">
+              {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(day => (
+                <div key={day} className="text-center text-xs font-medium text-gray-500 py-2">
+                  {day}
                 </div>
-                <button onClick={() => changeMonth(1)} className="p-1.5 rounded-full hover:bg-gray-100">
-                  <ChevronRight className="h-5 w-5 text-gray-500" />
-                </button>
-              </div>
-              <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-gray-500 mb-2">
-                <div>Su</div>
-                <div>Mo</div>
-                <div>Tu</div>
-                <div>We</div>
-                <div>Th</div>
-                <div>Fr</div>
-                <div>Sa</div>
-              </div>
-              <div className="grid grid-cols-7 gap-y-1">
-                {calendarDays()}
-              </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-7 gap-1">
+              {calendarDays().map((week, weekIndex) => 
+                week.map((date, dayIndex) => (
+                  <div key={`${weekIndex}-${dayIndex}`} className="aspect-square">
+                    {date ? (
+                      <button
+                        onClick={() => handleDateSelect(date)}
+                        className={`w-full h-full flex items-center justify-center text-sm rounded transition-colors ${
+                          isSelected(date)
+                            ? 'bg-blue-500 text-white font-medium'
+                            : isToday(date)
+                            ? 'bg-blue-100 text-blue-600 font-medium'
+                            : 'hover:bg-gray-100 text-gray-700'
+                        }`}
+                      >
+                        {date.getDate()}
+                      </button>
+                    ) : (
+                      <div className="w-full h-full"></div>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
           </div>
-        )
+        </div>
       )}
     </div>
   )
@@ -567,6 +593,14 @@ export default function EnhancedVerticalTimeline() {
   const [selectedDate, setSelectedDate] = useState(new Date())
   
   const { workersData, stats, isLoading, error, refreshData } = useRealTimelineData(selectedDate)
+  
+  // Modal states
+  const [swapModalOpen, setSwapModalOpen] = useState(false)
+  const [rescheduleModalOpen, setRescheduleModalOpen] = useState(false)
+  const [smartAssignmentModalOpen, setSmartAssignmentModalOpen] = useState(false)
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
+  const [selectedWorker, setSelectedWorker] = useState<{ id: string; name: string } | null>(null)
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<{ startTime: string; endTime: string } | null>(null)
 
   const changeDate = (days: number) => {
     const newDate = new Date(selectedDate)
@@ -593,6 +627,31 @@ export default function EnhancedVerticalTimeline() {
     }).format(date);
   }
 
+  // Modal handlers
+  const handleSwapWorker = (jobId: string) => {
+    setSelectedJobId(jobId)
+    setSwapModalOpen(true)
+  }
+
+  const handleReschedule = (jobId: string) => {
+    setSelectedJobId(jobId)
+    setRescheduleModalOpen(true)
+  }
+
+  const handleAvailabilityClick = (workerId: string, workerName: string, timeSlot: { startTime: string; endTime: string }) => {
+    setSelectedWorker({ id: workerId, name: workerName })
+    setSelectedTimeSlot(timeSlot)
+    setSmartAssignmentModalOpen(true)
+  }
+
+  const handleModalComplete = () => {
+    // Refresh data after successful operation
+    refreshData()
+    setSelectedJobId(null)
+    setSelectedWorker(null)
+    setSelectedTimeSlot(null)
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center p-12">
@@ -605,18 +664,24 @@ export default function EnhancedVerticalTimeline() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
+    <div className="space-y-6 max-w-full overflow-hidden">
+      {/* Header - Title on left, calendar below */}
+      <div className="flex flex-col gap-4">
+        {/* Title section - back to left */}
+        <div className="text-left">
           <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Team Timeline</h1>
           <p className="text-base text-gray-600 mt-1">
             {`Schedule for ${formatDateForDisplay(selectedDate)}`}
           </p>
+          <div className="flex items-center gap-2 mt-2 text-sm text-green-600">
+            <Zap className="w-4 h-4" />
+            <span className="font-medium">Click on available time slots to assign jobs instantly</span>
+          </div>
         </div>
         
+        {/* Date picker section - below title */}
         <div className="flex items-center space-x-2">
-          <div className="flex items-center border rounded-md">
+          <div className="flex items-center border rounded-md bg-white shadow-sm">
             <button
               onClick={() => changeDate(-1)}
               className="p-2 border-r hover:bg-gray-100 transition-colors"
@@ -624,7 +689,9 @@ export default function EnhancedVerticalTimeline() {
             >
               <ChevronLeft className="w-5 h-5 text-gray-600" />
             </button>
-            <DatePicker selectedDate={selectedDate} onDateChange={handleDateChange} />
+            <div className="relative">
+              <DatePicker selectedDate={selectedDate} onDateChange={handleDateChange} />
+            </div>
             <button
               onClick={() => changeDate(1)}
               className="p-2 border-l hover:bg-gray-100 transition-colors"
@@ -702,7 +769,14 @@ export default function EnhancedVerticalTimeline() {
       ) : workersData.length > 0 ? (
         <div className="space-y-6">
           {workersData.map(worker => (
-            <WorkerRow key={worker.id} worker={worker} />
+            <WorkerRow 
+              key={worker.id} 
+              worker={worker} 
+              onSwapWorker={handleSwapWorker}
+              onReschedule={handleReschedule}
+              onAvailabilityClick={handleAvailabilityClick}
+              selectedDate={selectedDate}
+            />
           ))}
         </div>
       ) : (
@@ -720,6 +794,41 @@ export default function EnhancedVerticalTimeline() {
           </div>
         </div>
       )}
+
+      {/* Modals */}
+      {selectedJobId && (
+        <>
+          <WorkerSwapModal
+            isOpen={swapModalOpen}
+            onClose={() => setSwapModalOpen(false)}
+            jobId={selectedJobId}
+            onSwapComplete={handleModalComplete}
+          />
+          <SmartRescheduleModal
+            isOpen={rescheduleModalOpen}
+            onClose={() => setRescheduleModalOpen(false)}
+            jobId={selectedJobId}
+            onRescheduleComplete={handleModalComplete}
+          />
+        </>
+      )}
+
+      {/* Smart Assignment Modal */}
+      {selectedWorker && selectedTimeSlot && (
+        <SmartAssignmentModal
+          isOpen={smartAssignmentModalOpen}
+          onClose={() => {
+            setSmartAssignmentModalOpen(false)
+            setSelectedWorker(null)
+            setSelectedTimeSlot(null)
+          }}
+          workerId={selectedWorker.id}
+          workerName={selectedWorker.name}
+          selectedDate={selectedDate}
+          selectedTimeSlot={selectedTimeSlot}
+          onJobCreated={handleModalComplete}
+        />
+      )}
     </div>
   )
-} 
+}

@@ -17,6 +17,7 @@ export function useTimelineJobs(selectedDate: Date = new Date()) {
   const [timelineData, setTimelineData] = useState<WorkerTimelineData[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   // Timeline configuration
   const timelineConfig: TimelineConfig = useMemo(() => ({
@@ -170,7 +171,7 @@ export function useTimelineJobs(selectedDate: Date = new Date()) {
     } finally {
       setLoading(false)
     }
-  }, [jobs, workers, selectedDate, jobsLoading, workersLoading, jobsError, workersError])
+  }, [jobs, workers, selectedDate, jobsLoading, workersLoading, jobsError, workersError, refreshKey])
 
   // Get total jobs count for the selected date
   const totalJobs = useMemo(() => {
@@ -185,8 +186,8 @@ export function useTimelineJobs(selectedDate: Date = new Date()) {
     loading,
     error,
     refreshData: () => {
-      // Trigger refresh of underlying hooks
-      window.location.reload() // Simple refresh for now
+      // Trigger refresh by updating the refresh key instead of full page reload
+      setRefreshKey(prev => prev + 1)
     }
   }
 } 

@@ -1,8 +1,11 @@
 'use client';
 
-import { useBusiness } from '@/hooks/use-business'
+import { useBusiness } from '../../../hooks/use-business'
 import BusinessForm from '@/components/settings/business-form'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button';
+import { LogOut } from 'lucide-react';
+import Link from 'next/link';
 
 export default function SettingsPage() {
   const { business, loading, error } = useBusiness()
@@ -86,6 +89,7 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+
       </div>
     </div>
   )

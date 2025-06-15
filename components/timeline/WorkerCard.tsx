@@ -3,17 +3,18 @@
 import React, { useState } from 'react'
 import { ChevronDown, ChevronRight, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { WorkerTimelineData, TimelineConfig } from '@/lib/types'
 import { JobBlock } from './JobBlock'
 import { AvailabilityTrack } from './AvailabilityTrack'
+import { SmartAssignmentModal } from './SmartAssignmentModal'
 import { UtilizationBadge, calculateUtilization, getTotalScheduledTime, getTotalAvailableTime } from './UtilizationBadge'
 
 interface WorkerCardProps {
-  workerData: WorkerTimelineData
-  timelineConfig: TimelineConfig
+  workerData: any
+  timelineConfig: any
   onJobClick?: (job: any) => void
   onJobReassign?: (job: any) => void
   className?: string
+  selectedDate?: Date
 }
 
 /**
@@ -25,11 +26,14 @@ export function WorkerCard({
   timelineConfig,
   onJobClick,
   onJobReassign,
-  className
+  className,
+  selectedDate = new Date()
 }: WorkerCardProps) {
   const { worker, jobs, status, totalJobs, timeRange, availability } = workerData
   const { hourWidth, minJobWidth } = timelineConfig
   const [isExpanded, setIsExpanded] = useState(true)
+  const [showSmartAssignment, setShowSmartAssignment] = useState(false)
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<{ startTime: string; endTime: string } | null>(null)
 
   // Calculate timeline dimensions
   const totalHours = timeRange.end - timeRange.start
@@ -96,111 +100,119 @@ export function WorkerCard({
     return `${minutes}m available`
   }
 
+  // Handle availability slot click
+  const handleAvailabilityClick = (timeSlot: { startTime: string; endTime: string }) => {
+    setSelectedTimeSlot(timeSlot)
+    setShowSmartAssignment(true)
+  }
+
+  // Handle job creation success
+  const handleJobCreated = (jobData: any) => {
+    setShowSmartAssignment(false)
+    setSelectedTimeSlot(null)
+    // Optionally refresh the timeline data here
+  }
+
   return (
-    <div className={cn('bg-white border border-gray-200 rounded-lg overflow-hidden', className)}>
-      {/* Worker Information Header */}
-      <div className="p-4 border-b border-gray-100">
-        <div className="flex items-start gap-3">
-          {/* Avatar */}
-          <div className="w-12 h-12 rounded-full bg-blue-500 text-white flex items-center justify-center font-medium text-sm flex-shrink-0">
-            {getInitials(worker.name)}
-          </div>
-
-          {/* Worker Details */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex-1 min-w-0">
-                <h3 className="text-lg font-semibold text-gray-900 truncate">
-                  {worker.name}
-                </h3>
-                <div className="flex items-center gap-2 mt-1 text-sm text-gray-600">
-                  <div className={cn('w-2 h-2 rounded-full', getStatusDot(status))} />
-                  <span className="capitalize">{status}</span>
-                  <Clock className="h-3 w-3 text-gray-400 ml-1" />
-                  <span>{formatWorkingHours()}</span>
-                </div>
-              </div>
-
-              {/* Utilization Badge */}
-              <UtilizationBadge 
-                percentage={utilizationPercentage}
-                size="md"
-                showLabel={true}
-                className="flex-shrink-0"
-              />
+    <>
+      <div className={cn('bg-white border border-gray-200 rounded-lg overflow-hidden', className)}>
+        {/* Worker Information Header */}
+        <div className="p-4 border-b border-gray-100">
+          <div className="flex items-start gap-3">
+            {/* Avatar */}
+            <div className="w-12 h-12 rounded-full bg-blue-500 text-white flex items-center justify-center font-medium text-sm flex-shrink-0">
+              {getInitials(worker.name)}
             </div>
 
-            {/* Job Count and Capacity */}
-            <div className="flex items-center justify-between mt-2">
-              <button
-                onClick={() => setIsExpanded(!isExpanded)}
-                className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 transition-colors"
-              >
-                <span>{totalJobs} jobs today</span>
-                {isExpanded ? (
-                  <ChevronDown className="h-3 w-3" />
-                ) : (
-                  <ChevronRight className="h-3 w-3" />
-                )}
-              </button>
+            {/* Worker Details */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-lg text-gray-900 truncate">{worker.name}</h3>
+                <button
+                  onClick={() => setIsExpanded(!isExpanded)}
+                  className="p-1 hover:bg-gray-100 rounded transition-colors"
+                >
+                  {isExpanded ? (
+                    <ChevronDown className="w-4 h-4 text-gray-500" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-gray-500" />
+                  )}
+                </button>
+              </div>
+              
+              <div className="flex items-center gap-2 mt-1">
+                <div className={cn('w-2 h-2 rounded-full', getStatusDot(status))} />
+                <span className="text-sm text-gray-600 capitalize">{status}</span>
+                <span className="text-sm text-gray-400">•</span>
+                <span className="text-sm text-gray-600">{totalJobs} jobs</span>
+              </div>
 
-              <span className="text-xs text-gray-500">
-                {getRemainingCapacity()}
-              </span>
+              <div className="flex items-center gap-4 mt-2">
+                <div className="flex items-center gap-1 text-sm text-gray-600">
+                  <Clock className="w-3 h-3" />
+                  <span>{formatWorkingHours()}</span>
+                </div>
+                <UtilizationBadge percentage={utilizationPercentage} />
+              </div>
+
+              <div className="mt-2">
+                <span className="text-sm text-gray-500">{getRemainingCapacity()}</span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Timeline Section */}
-      {isExpanded && (
-        <div className="p-4">
-          <div 
-            className="relative h-20 bg-gray-50 rounded-lg overflow-x-auto"
-            style={{ minWidth: '100%' }}
-          >
+        {/* Timeline Section */}
+        {isExpanded && (
+          <div className="p-4">
             <div 
-              className="relative h-full"
-              style={{ width: Math.max(timelineWidth, 400) }}
+              className="relative h-20 bg-gray-50 rounded-lg overflow-x-auto"
+              style={{ minWidth: '100%' }}
             >
-              {/* Availability background blocks */}
-              <AvailabilityTrack
-                availability={availability}
-                timeRange={timeRange}
-                hourWidth={hourWidth}
-              />
-              
-              {/* Job blocks */}
-              {jobs.map(job => {
-                const { position, width } = calculateJobPosition(job)
-                return (
-                  <JobBlock
-                    key={job.id}
-                    job={job}
-                    width={width}
-                    left={position}
-                    onClick={onJobClick}
-                    onReassign={onJobReassign}
-                  />
-                )
-              })}
+              <div 
+                className="relative h-full"
+                style={{ width: Math.max(timelineWidth, 400) }}
+              >
+                {/* Availability background blocks */}
+                <AvailabilityTrack
+                  availability={availability}
+                  timeRange={timeRange}
+                  hourWidth={hourWidth}
+                  onAvailabilityClick={handleAvailabilityClick}
+                  workerId={worker.id}
+                  workerName={worker.name}
+                />
+                
+                {/* Job blocks */}
+                {jobs.map((job: any) => {
+                  const { position, width } = calculateJobPosition(job)
+                  return (
+                    <JobBlock
+                      key={job.id}
+                      job={job}
+                      width={width}
+                      left={position}
+                      onClick={onJobClick}
+                      onReassign={onJobReassign}
+                    />
+                  )
+                })}
 
-              {/* Empty state when no jobs */}
-              {jobs.length === 0 && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="text-center text-gray-500">
-                    <div className="text-sm">No jobs scheduled</div>
-                    <div className="text-xs mt-1 opacity-75">
-                      {availableMinutes > 0 ? 'Fully available' : 'No availability set'}
+                {/* Empty state when no jobs */}
+                {jobs.length === 0 && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="text-center text-gray-500">
+                      <div className="text-sm">No jobs scheduled</div>
+                      <div className="text-xs mt-1 opacity-75">
+                        {availableMinutes > 0 ? 'Fully available' : 'No availability set'}
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          </div>
 
-          {/* Timeline legend (optional) */}
-          {jobs.length > 0 && (
+            {/* Timeline legend (optional) */}
             <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
               <div className="flex items-center gap-1">
                 <div className="w-3 h-3 bg-green-100 border border-green-200 rounded" />
@@ -215,9 +227,25 @@ export function WorkerCard({
                 <span>Scheduled</span>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
+      </div>
+
+      {/* Smart Assignment Modal */}
+      {showSmartAssignment && selectedTimeSlot && (
+        <SmartAssignmentModal
+          isOpen={showSmartAssignment}
+          onClose={() => {
+            setShowSmartAssignment(false)
+            setSelectedTimeSlot(null)
+          }}
+          workerId={worker.id}
+          workerName={worker.name}
+          selectedDate={selectedDate}
+          selectedTimeSlot={selectedTimeSlot}
+          onJobCreated={handleJobCreated}
+        />
       )}
-    </div>
+    </>
   )
 } 

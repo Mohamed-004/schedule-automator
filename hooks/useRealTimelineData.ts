@@ -71,14 +71,13 @@ export function useRealTimelineData(selectedDate: Date): UseRealTimelineDataRetu
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
-  
-  const supabase = createClient()
 
   const fetchRealData = useCallback(async (date: Date) => {
     try {
       setIsLoading(true)
       setError(null)
 
+      const supabase = createClient()
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       if (userError || !user) throw new Error('Authentication failed.')
 
@@ -100,7 +99,7 @@ export function useRealTimelineData(selectedDate: Date): UseRealTimelineDataRetu
         { data: exceptions, error: exceptionsError }
       ] = await Promise.all([
         supabase.from('workers').select('*').eq('business_id', business.id).eq('status', 'active'),
-        supabase.from('jobs').select('*, clients(name), workers(name)').eq('business_id', business.id).gte('scheduled_at', `${dateString}T00:00:00.000Z`).lt('scheduled_at', `${dateString}T23:59:59.999Z`),
+        supabase.from('jobs').select('*').eq('business_id', business.id).gte('scheduled_at', `${dateString}T00:00:00.000Z`).lt('scheduled_at', `${dateString}T23:59:59.999Z`),
         supabase.from('worker_weekly_availability').select('*').eq('day_of_week', dayOfWeek),
         supabase.from('worker_availability_exceptions').select('*').eq('date', dateString)
       ])
@@ -131,7 +130,7 @@ export function useRealTimelineData(selectedDate: Date): UseRealTimelineDataRetu
     } finally {
       setIsLoading(false)
     }
-  }, [supabase])
+  }, [])
 
   useEffect(() => {
     fetchRealData(selectedDate)
@@ -196,7 +195,7 @@ function processTimelineData(
         return {
           id: job.id,
           title: job.title,
-          client: job.clients?.name || 'Unknown Client',
+          client: 'Client', // We'll fetch client names separately if needed
           startTime: formatTime12Hour(startTime),
           duration: duration < 60 ? `${duration}m` : `${Math.floor(duration / 60)}h${duration % 60 > 0 ? ` ${duration % 60}m` : ''}`,
           status: mapJobStatus(job.status),

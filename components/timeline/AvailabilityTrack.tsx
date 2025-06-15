@@ -9,6 +9,9 @@ interface AvailabilityTrackProps {
   timeRange: { start: number; end: number }
   hourWidth: number
   className?: string
+  onAvailabilityClick?: (timeSlot: { startTime: string; endTime: string }) => void
+  workerId?: string
+  workerName?: string
 }
 
 /**
@@ -19,7 +22,10 @@ export function AvailabilityTrack({
   availability,
   timeRange,
   hourWidth,
-  className
+  className,
+  onAvailabilityClick,
+  workerId,
+  workerName
 }: AvailabilityTrackProps) {
   // Generate availability blocks for the time range
   const generateAvailabilityBlocks = () => {
@@ -73,7 +79,9 @@ export function AvailabilityTrack({
           type: 'available',
           left,
           width,
-          label: `Available ${Math.floor(availableStart)}:${String(Math.floor((availableStart % 1) * 60)).padStart(2, '0')} - ${Math.floor(availableEnd)}:${String(Math.floor((availableEnd % 1) * 60)).padStart(2, '0')}`
+          label: `Available ${Math.floor(availableStart)}:${String(Math.floor((availableStart % 1) * 60)).padStart(2, '0')} - ${Math.floor(availableEnd)}:${String(Math.floor((availableEnd % 1) * 60)).padStart(2, '0')}`,
+          startTime: `${String(Math.floor(availableStart)).padStart(2, '0')}:${String(Math.floor((availableStart % 1) * 60)).padStart(2, '0')}`,
+          endTime: `${String(Math.floor(availableEnd)).padStart(2, '0')}:${String(Math.floor((availableEnd % 1) * 60)).padStart(2, '0')}`
         })
       }
 
@@ -106,20 +114,35 @@ export function AvailabilityTrack({
           className={cn(
             'absolute top-0 bottom-0 transition-all duration-200',
             block.type === 'available' 
-              ? 'bg-green-50 border-l border-r border-green-200' 
+              ? 'bg-green-50 border-l border-r border-green-200 hover:bg-green-100 cursor-pointer' 
               : 'bg-gray-100 border-l border-r border-gray-200'
           )}
           style={{
             left: block.left,
             width: block.width
           }}
-          title={block.label}
+          title={block.type === 'available' ? `${block.label} - Click to assign job` : block.label}
+          onClick={block.type === 'available' && onAvailabilityClick && 'startTime' in block && 'endTime' in block ? 
+            () => onAvailabilityClick({ 
+              startTime: (block as any).startTime, 
+              endTime: (block as any).endTime 
+            }) : undefined
+          }
         >
           {/* Availability indicator pattern */}
           {block.type === 'available' ? (
             <div className="absolute inset-0 bg-green-100 opacity-30" />
           ) : (
             <div className="absolute inset-0 bg-gray-200 opacity-40 bg-[repeating-linear-gradient(45deg,transparent,transparent_4px,rgba(0,0,0,0.1)_4px,rgba(0,0,0,0.1)_8px)]" />
+          )}
+          
+          {/* Click indicator for available slots */}
+          {block.type === 'available' && onAvailabilityClick && (
+            <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity duration-200">
+              <div className="bg-green-600 text-white text-xs px-2 py-1 rounded shadow-lg font-medium">
+                Click to Assign
+              </div>
+            </div>
           )}
         </div>
       ))}

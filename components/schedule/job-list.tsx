@@ -1,19 +1,43 @@
-import { Clock, MapPin, User, Tag, Calendar, MoreHorizontal, Sun, Wind, CloudDrizzle, CheckCircle, CalendarClock } from 'lucide-react'
-import type { Job, Worker, Client } from '@/lib/types'
-import { Card } from '@/components/ui/card'
+import { Clock, MapPin, User, Mail, Phone, Tag, Calendar, MoreHorizontal, Sun, Wind, CloudDrizzle, CheckCircle, CalendarClock } from 'lucide-react'
+import type { Job } from '@/lib/types'
+import { useWorkers } from '@/hooks/use-workers'
+import { useBusiness } from '@/hooks/use-business'
+import { useEffect, useState } from 'react'
+import { useSupabase } from '@/lib/SupabaseProvider'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '@/lib/utils'
 
+function formatPhone(phone: string) {
+  if (!phone) return '';
+  const cleaned = ('' + phone).replace(/\D/g, '');
+  if (cleaned.length === 10) {
+    return `(${cleaned.slice(0,3)}) ${cleaned.slice(3,6)}-${cleaned.slice(6)}`;
+  }
+  if (cleaned.length === 11 && cleaned[0] === '1') {
+    return `+1 (${cleaned.slice(1,4)}) ${cleaned.slice(4,7)}-${cleaned.slice(7)}`;
+  }
+  return phone;
+}
+
+function countryToFlag(countryCode: string) {
+  if (!countryCode) return '';
+  return countryCode
+    .toUpperCase()
+    .replace(/./g, char =>
+      String.fromCodePoint(127397 + char.charCodeAt(0))
+    );
+}
+
 interface JobListProps {
-  jobs: Job[];
-  workers: Worker[];
-  clients: Client[];
+  jobs: Job[]
 }
 
 const getStatusStyles = (status: string) => {
-  switch (status?.toLowerCase()) {
+  switch (status.toLowerCase()) {
     case 'completed': return 'bg-green-100 text-green-800 border-green-200'
     case 'in_progress': return 'bg-yellow-100 text-yellow-800 border-yellow-200'
     case 'cancelled': return 'bg-red-100 text-red-800 border-red-200'
@@ -22,7 +46,7 @@ const getStatusStyles = (status: string) => {
 }
 
 const getStatusIcon = (status: string) => {
-  switch (status?.toLowerCase()) {
+  switch (status.toLowerCase()) {
     case 'completed': return <CheckCircle className="h-3.5 w-3.5" />;
     case 'in_progress': return <CalendarClock className="h-3.5 w-3.5" />;
     case 'cancelled': return <Tag className="h-3.5 w-3.5" />;
@@ -141,25 +165,51 @@ const JobCard = ({ job, index }: { job: Job, index: number }) => {
   )
 }
 
-export default function JobList({ jobs, workers, clients }: JobListProps) {
-  if (!jobs || jobs.length === 0) {
-    return <EmptyState />;
-  }
+export default function JobList({ jobs }: JobListProps) {
+  const { supabase } = useSupabase();
+  const { business } = useBusiness();
+  const { workers } = useWorkers();
+  const [clients, setClients] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  
+  useEffect(() => {
+    async function fetchClients() {
+      if (!business?.id || !supabase) return;
+      
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('clients')
+          .select('*')
+          .eq('business_id', business.id);
+          
+        if (error) throw error;
+        setClients(data || []);
+      } catch (err) {
+        console.error('Error fetching clients:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    fetchClients();
+  }, [business, supabase]);
 
   const workerMap = Object.fromEntries(
-    (workers || []).map((w) => [String(w.id).trim(), w])
+    workers.map((w: any) => [String(w.id).trim(), w])
+  );
+  const clientMap = Object.fromEntries(
+    clients.map((c: any) => [String(c.id).trim(), c])
   );
   
-  // Enrich jobs with worker info from the map
-  const enrichedJobs = jobs.map(job => ({
-    ...job,
-    worker: workerMap[String(job.worker_id).trim()],
-  }));
+  if (jobs.length === 0) {
+    return <EmptyState />;
+  }
 
   return (
     <div className="space-y-3">
       <AnimatePresence>
-        {enrichedJobs.map((job, index) => (
+        {jobs.map((job, index) => (
           <JobCard key={job.id} job={job} index={index} />
         ))}
       </AnimatePresence>

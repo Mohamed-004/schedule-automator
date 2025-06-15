@@ -1,4 +1,7 @@
-import { Bell, Settings, User } from 'lucide-react'
+'use client';
+
+import { Bell, Settings, User, LogOut } from 'lucide-react'
+import Link from 'next/link';
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -8,8 +11,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { useBusiness } from '@/hooks/use-business'
-import { useNotifications } from '@/hooks/use-notifications'
+import { useBusiness } from '../../hooks/use-business'
+import { useNotifications } from '../../hooks/use-notifications'
 
 export function Header() {
   const { business } = useBusiness()
@@ -55,8 +58,6 @@ export function Header() {
               <DropdownMenuItem>Business Profile</DropdownMenuItem>
               <DropdownMenuItem>Team Members</DropdownMenuItem>
               <DropdownMenuItem>Billing</DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-red-600">Sign Out</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -74,6 +75,12 @@ export function Header() {
               <DropdownMenuItem>Preferences</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          <Link href="/auth/signout" title="Sign Out">
+            <Button variant="ghost" size="icon">
+              <LogOut className="h-5 w-5" />
+            </Button>
+          </Link>
         </div>
       </div>
     </header>

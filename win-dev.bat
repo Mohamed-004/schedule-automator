@@ -14,7 +14,7 @@ set NODE_OPTIONS=--max-old-space-size=4096
 set NEXT_TELEMETRY_DISABLED=1
 
 echo Starting Next.js development server...
-call npm run dev
+call npm run dev:fixed
 
 endlocal
 pause 

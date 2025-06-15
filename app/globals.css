@@ -44,6 +44,45 @@
   }
 }
 
+/* Glassmorphism utilities for authentication pages */
+@layer utilities {
+  .glass-card {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+  
+  .glass-card-dark {
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+  
+  .animate-float-delayed {
+    animation: float 6s ease-in-out infinite;
+    animation-delay: 2s;
+  }
+  
+  .animate-pulse-slow {
+    animation: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-20px);
+  }
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -135,6 +174,68 @@
   background: hsl(var(--popover)) !important;
   z-index: 999 !important;
   outline: none !important;
+}
+
+/* Enhanced popover overflow handling */
+[data-radix-popper-content-wrapper] {
+  /* Ensure proper positioning and overflow handling */
+  max-height: calc(100vh - 100px) !important;
+  overflow: visible !important;
+}
+
+/* Time selection popover specific styles */
+[data-radix-popper-content-wrapper] [data-radix-popover-content] {
+  max-height: 300px !important;
+  overflow: hidden !important;
+}
+
+/* Fix mouse wheel scrolling for popover content */
+[data-radix-popover-content] {
+  /* Enable smooth mouse wheel scrolling */
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+}
+
+/* Ensure scrollable areas work with mouse wheel */
+[data-radix-popover-content].overflow-y-auto {
+  /* Force hardware acceleration for smooth scrolling */
+  transform: translateZ(0);
+  -webkit-overflow-scrolling: touch;
+  /* Ensure mouse wheel events are captured */
+  pointer-events: auto !important;
+}
+
+/* Scrollable content within popovers */
+[data-radix-popover-content] > div {
+  /* Enable mouse wheel scrolling */
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar for popover content */
+[data-radix-popover-content]::-webkit-scrollbar {
+  width: 6px;
+}
+
+[data-radix-popover-content]::-webkit-scrollbar-track {
+  background: #f8fafc;
+  border-radius: 3px;
+}
+
+[data-radix-popover-content]::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+[data-radix-popover-content]::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Enhanced scrolling for time selection containers */
+[data-radix-popover-content] > div {
+  max-height: 240px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
 }
 
 /* Remove outline from command input within popovers */

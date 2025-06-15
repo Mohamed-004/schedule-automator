@@ -2,7 +2,7 @@
 
 import { CustomLink } from '@/components/ui/custom-link'
 import { usePathname } from 'next/navigation'
-import { Calendar, Users, Briefcase, Bell, ListTodo, Menu, X, Settings } from 'lucide-react'
+import { Calendar, Users, Briefcase, Bell, ListTodo, Menu, X, Settings, LogOut } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { cn } from '@/lib/utils'
 import { useOnClickOutside } from '@/hooks/use-on-click-outside'
@@ -18,6 +18,7 @@ const navLinks = [
 
 const bottomLinks = [
     { href: '/dashboard/settings', label: 'Settings', icon: Settings },
+    { href: '/auth/signout', label: 'Sign Out', icon: LogOut },
 ]
 
 export default function Sidebar() {

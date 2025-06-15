@@ -603,6 +603,56 @@ export function AssignmentForm({ clients: initialClients, workers: initialWorker
         },
     });
 
+    // Handle URL parameters for pre-filling from Quick Assign
+    useEffect(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const prefill = urlParams.get('prefill');
+        
+        if (prefill === 'true') {
+            const workerId = urlParams.get('workerId');
+            const workerName = urlParams.get('workerName');
+            const scheduledDate = urlParams.get('scheduledDate');
+            const scheduledTime = urlParams.get('scheduledTime');
+            const duration = urlParams.get('duration');
+            
+            if (scheduledDate && scheduledTime && duration) {
+                // Set the date
+                form.setValue('scheduledAtDate', new Date(scheduledDate));
+                
+                // Set the time
+                form.setValue('scheduledAtTime', scheduledTime);
+                
+                // Calculate end time based on duration
+                const [hours, minutes] = scheduledTime.split(':').map(Number);
+                const startMinutes = hours * 60 + minutes;
+                const endMinutes = startMinutes + parseInt(duration);
+                const endHours = Math.floor(endMinutes / 60) % 24;
+                const endMins = endMinutes % 60;
+                const endTimeStr = `${String(endHours).padStart(2, '0')}:${String(endMins).padStart(2, '0')}`;
+                
+                form.setValue('scheduledEndTime', endTimeStr);
+                form.setValue('duration', parseInt(duration));
+                
+                // Set calculated duration display
+                setCalculatedDuration(formatDuration(parseInt(duration)));
+                
+                // Pre-select worker if provided
+                if (workerId) {
+                    form.setValue('assignedWorkerId', workerId);
+                }
+                
+                // Show success message
+                toast.success('Form pre-filled from worker swap', {
+                    description: workerName ? `Ready to assign job to ${workerName}` : 'Job details have been pre-filled'
+                });
+                
+                // Clear URL parameters to clean up the URL
+                const newUrl = window.location.pathname;
+                window.history.replaceState({}, '', newUrl);
+            }
+        }
+    }, [form]);
+
     const { fields, append, remove } = useFieldArray({
         name: "workItems",
         control: form.control,
