@@ -66,25 +66,31 @@ export function SmartAssignmentModal({
     setError(null)
 
     try {
-      // Load clients and job types in parallel
-      const [clientsResponse, jobTypesResponse] = await Promise.all([
-        fetch('/api/clients'),
-        fetch('/api/job-types').catch(() => ({ ok: false })) // Optional endpoint
-      ])
-
+      // Load clients (required)
+      const clientsResponse = await fetch('/api/clients')
+      
       if (!clientsResponse.ok) {
         throw new Error('Failed to load clients')
       }
 
       const clientsData = await clientsResponse.json()
-      // Handle the API response format: { success: true, data: [...] }
       const processedClients = Array.isArray(clientsData) ? clientsData : (clientsData.data || [])
       setClients(processedClients)
 
-      // Job types are optional
-      if (jobTypesResponse && 'ok' in jobTypesResponse && jobTypesResponse.ok) {
-        const jobTypesData = await (jobTypesResponse as Response).json()
-        setJobTypes(jobTypesData)
+      // Load job types (optional - don't fail if it doesn't exist)
+      try {
+        const jobTypesResponse = await fetch('/api/job-types')
+        if (jobTypesResponse.ok) {
+          const jobTypesData = await jobTypesResponse.json()
+          const processedJobTypes = Array.isArray(jobTypesData) ? jobTypesData : (jobTypesData.data || [])
+          setJobTypes(processedJobTypes)
+        } else {
+          console.warn('Job types endpoint not available, proceeding without job types')
+          setJobTypes([])
+        }
+      } catch (jobTypesError) {
+        console.warn('Failed to load job types, proceeding without them:', jobTypesError)
+        setJobTypes([])
       }
 
     } catch (err) {

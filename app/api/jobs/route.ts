@@ -1,21 +1,92 @@
 import { NextResponse } from 'next/server'
-import { jobOperations } from '@/lib/db-operations'
-import { requireAuth, checkJobAccess } from '@/lib/auth'
+import { createClient } from '@/lib/supabase/server'
 
 export async function POST(request: Request) {
   try {
-    const session = await requireAuth()
-    const body = await request.json()
-    const job = await jobOperations.create({
-      ...body,
-      business_id: session.user.id
-    })
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
 
-    return NextResponse.json(job)
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Get user's business ID
+    const { data: business, error: businessError } = await supabase
+      .from('businesses')
+      .select('id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (businessError || !business) {
+      return NextResponse.json(
+        { error: 'Business not found' },
+        { status: 404 }
+      )
+    }
+
+    const body = await request.json()
+    
+    // Map frontend field names to database field names and filter for DB columns
+    const {
+      clientId,
+      workerId,
+      assignedWorkerId,
+      jobTypeId,
+      scheduledAt,
+      scheduledEndAt,
+      title,
+      description,
+      status,
+      duration,
+      location,
+      workItems, // This is an example of a field to ignore
+    } = body;
+
+    const jobData: { [key: string]: any } = {
+      business_id: business.id,
+      client_id: clientId || null,
+      worker_id: assignedWorkerId || workerId || null,
+      job_type_id: jobTypeId || null,
+      scheduled_at: scheduledAt,
+      scheduled_end_at: scheduledEndAt,
+      title,
+      description,
+      status,
+      duration,
+      location,
+    };
+    
+    // Remove undefined or null values to avoid inserting them into the database
+    Object.keys(jobData).forEach(
+      (key) => (jobData[key] === undefined || jobData[key] === null) && delete jobData[key]
+    );
+
+    console.log('Attempting to insert job with data:', jobData);
+
+    // Create job with business_id
+    const { data: job, error } = await supabase
+      .from('jobs')
+      .insert(jobData)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error creating job:', error)
+      return NextResponse.json(
+        { message: 'Failed to create job', details: error.message, code: error.code },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: job
+    })
   } catch (error) {
-    console.error('Error creating job:', error)
+    console.error('Internal Server Error:', error)
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
     return NextResponse.json(
-      { error: 'Internal Server Error' },
+      { message: 'Internal Server Error', details: errorMessage },
       { status: 500 }
     )
   }
@@ -23,7 +94,13 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   try {
-    const session = await requireAuth()
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { searchParams } = new URL(request.url)
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
@@ -35,12 +112,40 @@ export async function GET(request: Request) {
       )
     }
 
-    const jobs = await jobOperations.getByBusiness(
-      session.user.id,
-      startDate,
-      endDate
-    )
-    return NextResponse.json(jobs)
+    // Get user's business ID
+    const { data: business, error: businessError } = await supabase
+      .from('businesses')
+      .select('id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (businessError || !business) {
+      return NextResponse.json(
+        { error: 'Business not found' },
+        { status: 404 }
+      )
+    }
+
+    // Get jobs for the business
+    const { data: jobs, error } = await supabase
+      .from('jobs')
+      .select('*')
+      .eq('business_id', business.id)
+      .gte('scheduled_at', startDate)
+      .lte('scheduled_at', endDate)
+
+    if (error) {
+      console.error('Error fetching jobs:', error)
+      return NextResponse.json(
+        { error: 'Failed to fetch jobs' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: jobs || []
+    })
   } catch (error) {
     console.error('Error fetching jobs:', error)
     return NextResponse.json(
@@ -52,7 +157,13 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const session = await requireAuth()
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { searchParams } = new URL(request.url)
     const jobId = searchParams.get('id')
 
@@ -63,10 +174,85 @@ export async function PATCH(request: Request) {
       )
     }
 
-    await checkJobAccess(jobId)
+    // Check if user has access to this job
+    const { data: job, error: jobError } = await supabase
+      .from('jobs')
+      .select('business_id')
+      .eq('id', jobId)
+      .single()
+
+    if (jobError || !job) {
+      return NextResponse.json(
+        { error: 'Job not found' },
+        { status: 404 }
+      )
+    }
+
+    // Verify business ownership
+    const { data: business, error: businessError } = await supabase
+      .from('businesses')
+      .select('id')
+      .eq('id', job.business_id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (businessError || !business) {
+      return NextResponse.json(
+        { error: 'Unauthorized access to job' },
+        { status: 403 }
+      )
+    }
+
     const body = await request.json()
-    const job = await jobOperations.update(jobId, body)
-    return NextResponse.json(job)
+    
+    // Map frontend field names to database field names and filter for DB columns
+    const {
+      clientId,
+      workerId,
+      assignedWorkerId,
+      jobTypeId,
+      scheduledAt,
+      scheduledEndAt,
+      title,
+      description,
+      status,
+      duration,
+      location,
+    } = body;
+
+    const updateData = {
+      client_id: clientId || null,
+      worker_id: assignedWorkerId || workerId || null,
+      job_type_id: jobTypeId || null,
+      scheduled_at: scheduledAt,
+      scheduled_end_at: scheduledEndAt,
+      title,
+      description,
+      status,
+      duration,
+      location,
+    };
+
+    // Update job
+    const { data: updatedJob, error: updateError } = await supabase
+      .from('jobs')
+      .update(updateData)
+      .eq('id', jobId)
+      .select()
+      .single()
+
+    if (updateError) {
+      console.error('Error updating job:', updateError)
+      return NextResponse.json(
+        { error: 'Failed to update job' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: updatedJob
+    })
   } catch (error) {
     console.error('Error updating job:', error)
     return NextResponse.json(
@@ -78,7 +264,13 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const session = await requireAuth()
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { searchParams } = new URL(request.url)
     const jobId = searchParams.get('id')
 
@@ -89,8 +281,49 @@ export async function DELETE(request: Request) {
       )
     }
 
-    await checkJobAccess(jobId)
-    await jobOperations.delete(jobId)
+    // Check if user has access to this job
+    const { data: job, error: jobError } = await supabase
+      .from('jobs')
+      .select('business_id')
+      .eq('id', jobId)
+      .single()
+
+    if (jobError || !job) {
+      return NextResponse.json(
+        { error: 'Job not found' },
+        { status: 404 }
+      )
+    }
+
+    // Verify business ownership
+    const { data: business, error: businessError } = await supabase
+      .from('businesses')
+      .select('id')
+      .eq('id', job.business_id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (businessError || !business) {
+      return NextResponse.json(
+        { error: 'Unauthorized access to job' },
+        { status: 403 }
+      )
+    }
+
+    // Delete job
+    const { error: deleteError } = await supabase
+      .from('jobs')
+      .delete()
+      .eq('id', jobId)
+
+    if (deleteError) {
+      console.error('Error deleting job:', deleteError)
+      return NextResponse.json(
+        { error: 'Failed to delete job' },
+        { status: 500 }
+      )
+    }
+
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error deleting job:', error)

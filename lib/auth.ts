@@ -1,9 +1,8 @@
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
+import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 
 export async function getSession() {
-  const supabase = createServerComponentClient({ cookies })
+  const supabase = await createClient()
   const { data: { session } } = await supabase.auth.getSession()
   return session
 }
@@ -29,7 +28,7 @@ export async function checkBusinessAccess(businessId: string) {
 }
 
 export async function checkJobAccess(jobId: string) {
-  const supabase = createServerComponentClient({ cookies })
+  const supabase = await createClient()
   const session = await requireAuth()
   
   const { data: job, error } = await supabase
@@ -48,7 +47,7 @@ export async function checkJobAccess(jobId: string) {
 }
 
 export async function checkClientAccess(clientId: string) {
-  const supabase = createServerComponentClient({ cookies })
+  const supabase = await createClient()
   const session = await requireAuth()
   
   const { data: client, error } = await supabase
@@ -67,7 +66,7 @@ export async function checkClientAccess(clientId: string) {
 }
 
 export async function checkWorkerAccess(workerId: string) {
-  const supabase = createServerComponentClient({ cookies })
+  const supabase = await createClient()
   const session = await requireAuth()
   
   const { data: worker, error } = await supabase

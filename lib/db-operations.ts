@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { createClient } from './supabase/server'
 import type { 
   Business, 
   Worker, 
@@ -192,6 +192,7 @@ export const clientOperations = {
 // Job Operations
 export const jobOperations = {
   async create(job: Omit<Job, 'id' | 'created_at' | 'updated_at'>) {
+    const supabase = await createClient()
     const { data, error } = await supabase
       .from('jobs')
       .insert([job])

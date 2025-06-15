@@ -328,7 +328,10 @@ export function EmbeddedAssignmentForm({
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to create job')
+        const errorMessage = errorData.details 
+          ? `${errorData.message}: ${errorData.details} (Code: ${errorData.code})` 
+          : errorData.message || 'Failed to create job. Please check the server logs.'
+        throw new Error(errorMessage)
       }
 
       const result = await response.json()

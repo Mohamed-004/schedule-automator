@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
 /**
- * GET /api/clients
- * Get all clients for the authenticated user's business
+ * GET /api/job-types
+ * Get all job types (global table - no business filtering)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -14,36 +14,32 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get clients for the user's business
-    const { data: clients, error } = await supabase
-      .from('clients')
+    // Get all job types (global table)
+    const { data: jobTypes, error } = await supabase
+      .from('job_types')
       .select(`
         id,
         name,
-        email,
-        phone,
-        address,
-        business_id,
-        businesses!inner(user_id)
+        description,
+        required_skills
       `)
-      .eq('businesses.user_id', user.id)
       .order('name')
 
     if (error) {
-      console.error('Error fetching clients:', error)
+      console.error('Error fetching job types:', error)
       return NextResponse.json(
-        { error: 'Failed to fetch clients' },
+        { error: 'Failed to fetch job types' },
         { status: 500 }
       )
     }
 
     return NextResponse.json({
       success: true,
-      data: clients || []
+      data: jobTypes || []
     })
 
   } catch (error) {
-    console.error('Error in clients GET:', error)
+    console.error('Error in job-types GET:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
@@ -52,8 +48,8 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * POST /api/clients
- * Create a new client
+ * POST /api/job-types
+ * Create a new job type
  */
 export async function POST(request: NextRequest) {
   try {
@@ -65,57 +61,41 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { name, email, phone, address } = body
+    const { name, description, required_skills } = body
 
     if (!name) {
       return NextResponse.json(
-        { error: 'Client name is required' },
+        { error: 'Job type name is required' },
         { status: 400 }
       )
     }
 
-    // Get user's business ID
-    const { data: business, error: businessError } = await supabase
-      .from('businesses')
-      .select('id')
-      .eq('user_id', user.id)
-      .single()
-
-    if (businessError || !business) {
-      return NextResponse.json(
-        { error: 'Business not found' },
-        { status: 404 }
-      )
-    }
-
-    // Create client
-    const { data: client, error } = await supabase
-      .from('clients')
+    // Create job type (global table - no business_id needed)
+    const { data: jobType, error } = await supabase
+      .from('job_types')
       .insert({
         name,
-        email,
-        phone,
-        address,
-        business_id: business.id
+        description,
+        required_skills: required_skills || []
       })
       .select()
       .single()
 
     if (error) {
-      console.error('Error creating client:', error)
+      console.error('Error creating job type:', error)
       return NextResponse.json(
-        { error: 'Failed to create client' },
+        { error: 'Failed to create job type' },
         { status: 500 }
       )
     }
 
     return NextResponse.json({
       success: true,
-      data: client
+      data: jobType
     })
 
   } catch (error) {
-    console.error('Error in clients POST:', error)
+    console.error('Error in job-types POST:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
