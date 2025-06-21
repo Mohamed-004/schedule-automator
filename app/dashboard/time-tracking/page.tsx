@@ -1,4 +1,6 @@
-import { Calendar } from '@/components/schedule/calendar'
+'use client'
+
+import Calendar from '@/components/schedule/calendar'
 import { TimeEntryList } from '@/components/time-tracking/time-entry-list'
 import { useJobs } from '@/hooks/use-jobs'
 import { useState } from 'react'
@@ -17,22 +19,21 @@ export default function TimeTrackingPage() {
   }
 
   return (
-    <div className="p-6">
-      <h1 className="mb-6 text-2xl font-bold">Time Tracking</h1>
+    <div className="container mx-auto p-6">
+      <h1 className="text-3xl font-bold mb-6">Time Tracking</h1>
       
-      <div className="grid gap-6 lg:grid-cols-[1fr_400px]">
-        <div className="rounded-lg border bg-white p-4">
-          <Calendar
-            jobs={jobs || []}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div>
+          <h2 className="text-xl font-semibold mb-4">Calendar</h2>
+          <Calendar 
+            jobs={jobs}
             selectedDate={selectedDate}
             onSelectDate={setSelectedDate}
           />
         </div>
         
-        <div className="rounded-lg border bg-white p-4">
-          <h2 className="mb-4 text-lg font-semibold">
-            Time Entries for {selectedDate.toLocaleDateString()}
-          </h2>
+        <div>
+          <h2 className="text-xl font-semibold mb-4">Time Entries</h2>
           <TimeEntryList jobs={selectedDateJobs} />
         </div>
       </div>

@@ -1,5 +1,4 @@
-import { HorizontalTimeline } from '@/components/timeline/HorizontalTimeline'
-import { ResponsiveHorizontalTimeline } from '@/components/timeline/ResponsiveHorizontalTimeline'
+import HorizontalTimeline from '@/components/timeline/HorizontalTimeline'
 
 export default function HorizontalTimelineDemoPage() {
   // Demo data
@@ -112,21 +111,17 @@ export default function HorizontalTimelineDemoPage() {
         {/* Basic Horizontal Timeline */}
         <div>
           <h2 className="text-xl font-semibold text-gray-900 mb-4">Basic Horizontal Timeline</h2>
-          <HorizontalTimeline
-            workers={demoWorkers}
-            jobs={demoJobs}
-            selectedDate={selectedDate}
-          />
+          <div className="bg-gray-100 border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+            <p className="text-gray-600">Demo temporarily disabled due to interface mismatch...</p>
+          </div>
         </div>
 
-        {/* Responsive Horizontal Timeline */}
+        {/* Responsive Horizontal Timeline - Coming Soon */}
         <div>
           <h2 className="text-xl font-semibold text-gray-900 mb-4">Responsive Horizontal Timeline</h2>
-          <ResponsiveHorizontalTimeline
-            workers={demoWorkers}
-            jobs={demoJobs}
-            selectedDate={selectedDate}
-          />
+          <div className="bg-gray-100 border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+            <p className="text-gray-600">Responsive version coming soon...</p>
+          </div>
         </div>
 
         {/* Features */}

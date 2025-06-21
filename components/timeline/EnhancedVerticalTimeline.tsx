@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { Calendar, ChevronLeft, ChevronRight, RefreshCw, Users, Clock, CheckCircle, AlertCircle, MapPin, Send, MoreHorizontal, Zap } from 'lucide-react'
+import { format } from 'date-fns'
 import { useRealTimelineData } from '@/hooks/useRealTimelineData'
 import { sortTimeBlocks, formatDuration as utilFormatDuration } from '@/lib/time-utils'
 import { WorkerSwapModal } from './WorkerSwapModal'
-import { SmartRescheduleModal } from './SmartRescheduleModal'
+import { EnhancedRescheduleModal } from './EnhancedRescheduleModal'
 import { SmartAssignmentModal } from './SmartAssignmentModal'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -652,6 +653,110 @@ export default function EnhancedVerticalTimeline() {
     setSelectedTimeSlot(null)
   }
 
+  // Find the selected job from workers data
+  const selectedJob = selectedJobId ? workersData
+    .flatMap(worker => worker.jobs)
+    .find(job => job.id === selectedJobId) : null
+
+  // Convert job format for the modal
+  const modalJob = selectedJob ? (() => {
+    try {
+      // Parse duration - could be "60m", "1h 30m", "90", etc.
+      let duration = 60 // Default duration
+      if (selectedJob.duration) {
+        const durationStr = selectedJob.duration.toString()
+        
+        // Handle different duration formats
+        if (durationStr.includes('h')) {
+          const hourMatch = durationStr.match(/(\d+)h/)
+          const minuteMatch = durationStr.match(/(\d+)m/)
+          const hours = hourMatch ? parseInt(hourMatch[1]) : 0
+          const minutes = minuteMatch ? parseInt(minuteMatch[1]) : 0
+          duration = hours * 60 + minutes
+        } else if (durationStr.includes('m')) {
+          const minuteMatch = durationStr.match(/(\d+)m/)
+          duration = minuteMatch ? parseInt(minuteMatch[1]) : 60
+        } else {
+          // Assume it's just a number (minutes)
+          const numDuration = parseInt(durationStr)
+          if (!isNaN(numDuration)) {
+            duration = numDuration
+          }
+        }
+      }
+      
+      // Handle startTime - it's a time string like "09:00 AM"
+      let scheduledAt: string
+      if (selectedJob.startTime) {
+        // Convert time string to full datetime
+        const dateStr = format(selectedDate, 'yyyy-MM-dd')
+        
+        // Handle 12-hour format like "09:00 AM"
+        if (selectedJob.startTime.includes('AM') || selectedJob.startTime.includes('PM')) {
+          const timeStr = selectedJob.startTime.replace(/\s*(AM|PM)/i, '')
+          const [hours, minutes] = timeStr.split(':').map(Number)
+          const isPM = selectedJob.startTime.toUpperCase().includes('PM')
+          let hour24 = hours
+          
+          if (isPM && hours !== 12) hour24 += 12
+          if (!isPM && hours === 12) hour24 = 0
+          
+          const timeFormatted = `${hour24.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
+          scheduledAt = `${dateStr}T${timeFormatted}:00`
+        } else {
+          // Handle 24-hour format
+          scheduledAt = `${dateStr}T${selectedJob.startTime}:00`
+        }
+      } else {
+        scheduledAt = new Date().toISOString()
+      }
+      
+      return {
+        id: selectedJob.id,
+        title: selectedJob.title,
+        description: '',
+        scheduled_at: scheduledAt,
+        duration_minutes: duration,
+        client_name: selectedJob.client || 'Unknown Client',
+        client_phone: '',
+        location: '',
+        status: selectedJob.status,
+        worker_id: '',
+        worker: undefined
+      }
+    } catch (error) {
+      console.error('Error converting job format:', error)
+      return null
+    }
+  })() : null
+
+  // Handle reschedule operation
+  const handleRescheduleJob = async (jobId: string, newDateTime: string, workerId: string, reason?: string, notifyClient?: boolean) => {
+    try {
+      const response = await fetch(`/api/jobs/${jobId}/reschedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'manual-reschedule',
+          newDateTime,
+          newWorkerId: workerId,
+          reason,
+          notifyClient
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to reschedule job')
+      }
+
+      handleModalComplete()
+    } catch (error) {
+      console.error('Error rescheduling job:', error)
+      throw error
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center p-12">
@@ -804,11 +909,11 @@ export default function EnhancedVerticalTimeline() {
             jobId={selectedJobId}
             onSwapComplete={handleModalComplete}
           />
-          <SmartRescheduleModal
+          <EnhancedRescheduleModal
             isOpen={rescheduleModalOpen}
             onClose={() => setRescheduleModalOpen(false)}
-            jobId={selectedJobId}
-            onRescheduleComplete={handleModalComplete}
+            job={modalJob}
+            onReschedule={handleRescheduleJob}
           />
         </>
       )}

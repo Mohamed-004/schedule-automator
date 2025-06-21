@@ -102,15 +102,9 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url)
+    const jobId = searchParams.get('jobId')
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
-
-    if (!startDate || !endDate) {
-      return NextResponse.json(
-        { error: 'Start date and end date are required' },
-        { status: 400 }
-      )
-    }
 
     // Get user's business ID
     const { data: business, error: businessError } = await supabase
@@ -126,10 +120,66 @@ export async function GET(request: Request) {
       )
     }
 
-    // Get jobs for the business
+    // If jobId is provided, fetch single job
+    if (jobId) {
+      const { data: job, error } = await supabase
+        .from('jobs')
+        .select(`
+          *,
+          clients(name, phone, email),
+          workers!jobs_worker_id_fkey(name, email)
+        `)
+        .eq('id', jobId)
+        .eq('business_id', business.id)
+        .single()
+
+      if (error) {
+        console.error('Error fetching job:', error)
+        return NextResponse.json(
+          { error: 'Failed to fetch job' },
+          { status: 500 }
+        )
+      }
+
+      if (!job) {
+        return NextResponse.json(
+          { error: 'Job not found' },
+          { status: 404 }
+        )
+      }
+
+      // Flatten the nested structure for easier access
+      const flattenedJob = {
+        ...job,
+        client_name: job.clients?.name || null,
+        client_phone: job.clients?.phone || null,
+        client_email: job.clients?.email || null,
+        worker_name: job.workers?.name || null,
+        worker_email: job.workers?.email || null,
+      }
+
+      return NextResponse.json({
+        success: true,
+        jobs: [flattenedJob]
+      })
+    }
+
+    // Otherwise, fetch jobs by date range
+    if (!startDate || !endDate) {
+      return NextResponse.json(
+        { error: 'Start date and end date are required when not fetching a specific job' },
+        { status: 400 }
+      )
+    }
+
+    // Get jobs for the business with client and worker information
     const { data: jobs, error } = await supabase
       .from('jobs')
-      .select('*')
+      .select(`
+        *,
+        clients(name, phone, email),
+        workers!jobs_worker_id_fkey(name, email)
+      `)
       .eq('business_id', business.id)
       .gte('scheduled_at', startDate)
       .lte('scheduled_at', endDate)
@@ -142,9 +192,19 @@ export async function GET(request: Request) {
       )
     }
 
+    // Flatten the nested structure for easier access
+    const flattenedJobs = (jobs || []).map(job => ({
+      ...job,
+      client_name: job.clients?.name || null,
+      client_phone: job.clients?.phone || null,
+      client_email: job.clients?.email || null,
+      worker_name: job.workers?.name || null,
+      worker_email: job.workers?.email || null,
+    }))
+
     return NextResponse.json({
       success: true,
-      data: jobs || []
+      data: flattenedJobs
     })
   } catch (error) {
     console.error('Error fetching jobs:', error)
