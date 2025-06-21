@@ -733,26 +733,65 @@ export default function EnhancedVerticalTimeline() {
   // Handle reschedule operation
   const handleRescheduleJob = async (jobId: string, newDateTime: string, workerId: string, reason?: string, notifyClient?: boolean) => {
     try {
+      const requestBody = {
+        action: 'manual-reschedule',
+        newDateTime,
+        newWorkerId: workerId,
+        reason,
+        notifyClient
+      }
+      
+      console.log('🚀 TIMELINE DEBUG - Making reschedule API call:', {
+        url: `/api/jobs/${jobId}/reschedule`,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: requestBody,
+        jobId,
+        newDateTime,
+        workerId,
+        reason,
+        notifyClient
+      })
+
       const response = await fetch(`/api/jobs/${jobId}/reschedule`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'manual-reschedule',
-          newDateTime,
-          newWorkerId: workerId,
-          reason,
-          notifyClient
-        })
+        body: JSON.stringify(requestBody)
+      })
+
+      console.log('📡 TIMELINE DEBUG - API Response received:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        headers: Object.fromEntries(response.headers.entries())
       })
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to reschedule job')
+        console.error('❌ TIMELINE DEBUG - API Error Response:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorData
+        })
+        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`)
       }
+
+      const successData = await response.json()
+      console.log('✅ TIMELINE DEBUG - API Success Response:', successData)
 
       handleModalComplete()
     } catch (error) {
-      console.error('Error rescheduling job:', error)
+      console.error('❌ TIMELINE DEBUG - Error in handleRescheduleJob:', error)
+      
+      // Enhanced error logging
+      if (error instanceof Error) {
+        console.error('❌ TIMELINE DEBUG - Error details:', {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        })
+      }
+      
       throw error
     }
   }

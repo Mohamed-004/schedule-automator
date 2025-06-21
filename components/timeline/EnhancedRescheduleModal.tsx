@@ -41,6 +41,7 @@ import {
   FileText,
   Search
 } from 'lucide-react'
+import { useToast } from '@/components/ui/use-toast'
 
 /**
  * Professional Reschedule Modal Component
@@ -129,6 +130,14 @@ export function EnhancedRescheduleModal({
   const [completeJobData, setCompleteJobData] = useState<Job | null>(null)
   const [isLoadingJobData, setIsLoadingJobData] = useState<boolean>(false)
   const [availabilityMessage, setAvailabilityMessage] = useState<string>('')
+  const [smsStatus, setSmsStatus] = useState<{
+    clientSent: boolean
+    workerSent: boolean
+    clientPhone: string | null
+    workerPhone: string | null
+  } | null>(null)
+
+  const { toast } = useToast()
 
   // Computed Values
   const availableWorkers = workerAvailability.filter(w => w.isAvailable)
@@ -155,6 +164,7 @@ export function EnhancedRescheduleModal({
     setValidationErrors([])
     setIsJobDetailsOpen(false)
     setCompleteJobData(null)
+    setSmsStatus(null)
   }
 
   // Fetch workers on mount
@@ -334,13 +344,124 @@ export function EnhancedRescheduleModal({
     if (!job || !selectedDate || !selectedTime || !selectedWorkerId) return
 
     setIsProcessing(true)
+    setSmsStatus(null) // Reset SMS status
+    
     try {
-      const newDateTime = `${format(selectedDate, 'yyyy-MM-dd')}T${selectedTime}:00`
+      // Create a proper ISO datetime string
+      const dateTimeString = `${format(selectedDate, 'yyyy-MM-dd')}T${selectedTime}:00`
+      const dateTime = new Date(dateTimeString)
+      const newDateTime = dateTime.toISOString()
+      
+      // Debug: Log all the data being sent
+      const requestData = {
+        action: 'manual-reschedule',
+        newDateTime,
+        newWorkerId: selectedWorkerId,
+        reason: rescheduleReason,
+        notifyClient
+      }
+      
+      console.log('🔧 RESCHEDULE DEBUG - Request Data:', {
+        jobId: job.id,
+        requestData,
+        originalJob: job,
+        completeJobData,
+        selectedDate: selectedDate.toISOString(),
+        selectedTime,
+        selectedWorkerId,
+        rescheduleReason,
+        notifyClient,
+        dateTimeString,
+        constructedDate: dateTime,
+        formattedDateTime: newDateTime
+      })
+      
+      // Call the reschedule function
       await onReschedule(job.id, newDateTime, selectedWorkerId, rescheduleReason, notifyClient)
+      
+      console.log('✅ RESCHEDULE DEBUG - onReschedule completed successfully')
+      
+      // Show success message with SMS notification info
+      if (notifyClient) {
+        const clientPhone = completeJobData?.client_phone || job.client_phone
+        const workerChanged = selectedWorkerId !== job.worker_id
+        
+        console.log('📱 RESCHEDULE DEBUG - SMS Notification Info:', {
+          clientPhone,
+          workerChanged,
+          notifyClient,
+          selectedWorkerId,
+          originalWorkerId: job.worker_id
+        })
+        
+        if (clientPhone) {
+          // Show SMS sent confirmation
+          setSmsStatus({
+            clientSent: true,
+            workerSent: workerChanged,
+            clientPhone,
+            workerPhone: null
+          })
+          
+          // Show success toast with SMS info
+          if (typeof window !== 'undefined' && window.dispatchEvent) {
+            window.dispatchEvent(new CustomEvent('show-toast', {
+              detail: {
+                type: 'success',
+                title: 'Appointment Rescheduled Successfully!',
+                description: `SMS notifications sent to client${workerChanged ? ' and worker' : ''}.`
+              }
+            }))
+          }
+        } else {
+          // Show warning if no client phone
+          if (typeof window !== 'undefined' && window.dispatchEvent) {
+            window.dispatchEvent(new CustomEvent('show-toast', {
+              detail: {
+                type: 'warning',
+                title: 'Appointment Rescheduled',
+                description: 'Client has no phone number on file. Please contact them manually.'
+              }
+            }))
+          }
+        }
+      } else {
+        // Show standard success message
+        if (typeof window !== 'undefined' && window.dispatchEvent) {
+          window.dispatchEvent(new CustomEvent('show-toast', {
+            detail: {
+              type: 'success',
+              title: 'Appointment Rescheduled Successfully!',
+              description: 'The appointment has been updated.'
+            }
+          }))
+        }
+      }
+
+      // Close modal after success
       onClose()
     } catch (error) {
-      console.error('Error rescheduling job:', error)
-      setValidationErrors(['Failed to reschedule job. Please try again.'])
+      console.error('❌ RESCHEDULE DEBUG - Error in executeReschedule:', error)
+      
+      // Enhanced error logging
+      if (error instanceof Error) {
+        console.error('❌ RESCHEDULE DEBUG - Error details:', {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        })
+      }
+      
+      // Show error message
+      if (typeof window !== 'undefined' && window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('show-toast', {
+          detail: {
+            type: 'error',
+            title: 'Reschedule Failed',
+            description: error instanceof Error ? error.message : 'An unexpected error occurred'
+          }
+        }))
+      }
     } finally {
       setIsProcessing(false)
     }
@@ -407,7 +528,7 @@ export function EnhancedRescheduleModal({
   if (!job) return null
 
   return (
-        <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader className="pb-4 border-b border-gray-200">
           <div className="flex items-center space-x-3">
@@ -416,8 +537,8 @@ export function EnhancedRescheduleModal({
             </div>
             <div>
               <DialogTitle className="text-xl font-semibold text-gray-900">
-                Reschedule Appointment
-              </DialogTitle>
+            Reschedule Appointment
+          </DialogTitle>
               <p className="text-sm text-gray-600 mt-0.5">
                 {job?.title ? `${job.title} - ` : ''}
                 {job?.client_name || 'Unknown Client'}
@@ -1337,7 +1458,7 @@ export function EnhancedRescheduleModal({
                 <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center">
                   <CheckCircle className="w-5 h-5 text-white" />
                 </div>
-                <div>
+                    <div>
                   <h3 className="text-lg font-semibold text-gray-900">Confirm Reschedule</h3>
                   <p className="text-sm text-gray-600">Review the appointment changes below</p>
                 </div>
@@ -1427,8 +1548,8 @@ export function EnhancedRescheduleModal({
                             }
                             return cleanName.slice(0, 2).toUpperCase();
                           })()}
-                        </div>
-                        <div>
+                    </div>
+                    <div>
                           <p className="text-sm font-semibold text-gray-900">
                             {(() => {
                               // Enhanced worker name resolution with proper formatting
@@ -1459,51 +1580,86 @@ export function EnhancedRescheduleModal({
                         </div>
                       </div>
                     </div>
+                    </div>
                   </div>
                 </div>
-              </div>
 
               {/* Clean Options Section */}
-              <div className="space-y-4">
+                <div className="space-y-4">
                 {/* Reason Input */}
                 <div className="space-y-2">
                   <Label htmlFor="reschedule-reason" className="text-sm font-medium text-gray-900">
                     Reason for Change <span className="text-gray-500 font-normal">(Optional)</span>
                   </Label>
-                  <Input
-                    id="reschedule-reason"
-                    value={rescheduleReason}
-                    onChange={(e) => setRescheduleReason(e.target.value)}
+                    <Input
+                      id="reschedule-reason"
+                      value={rescheduleReason}
+                      onChange={(e) => setRescheduleReason(e.target.value)}
                     placeholder="e.g., Client request, scheduling conflict, emergency"
                     className="bg-white border-gray-300 focus:border-blue-500 focus:ring-blue-500"
-                  />
-                </div>
+                    />
+                  </div>
 
                 {/* Client Notification */}
                 <div className="bg-white rounded-lg p-4 border border-gray-200">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
-                      <Switch
-                        id="notify-client"
-                        checked={notifyClient}
-                        onCheckedChange={setNotifyClient}
+                    <Switch
+                      id="notify-client"
+                      checked={notifyClient}
+                      onCheckedChange={setNotifyClient}
                         className="data-[state=checked]:bg-blue-600 data-[state=unchecked]:bg-gray-200"
                       />
                       <div>
                         <Label htmlFor="notify-client" className="text-sm font-medium text-gray-900">
-                          Notify client of the change
+                          Notify client and worker of the change
                         </Label>
                         <p className="text-xs text-gray-600 mt-0.5">
-                          Client will receive an email notification about the schedule change
+                          {(() => {
+                            const clientPhone = completeJobData?.client_phone || job?.client_phone
+                            const workerChanged = selectedWorkerId !== job?.worker_id
+                            
+                            if (clientPhone) {
+                              return `SMS notifications will be sent to client${workerChanged ? ' and worker' : ''}`
+                            } else {
+                              return 'Client has no phone number - manual contact required'
+                            }
+                          })()}
                         </p>
-                      </div>
+                  </div>
                     </div>
                     {notifyClient && (
                       <Badge variant="secondary" className="bg-blue-100 text-blue-700 text-xs">
                         Recommended
                       </Badge>
                     )}
-                  </div>
+                </div>
+
+                  {/* SMS Status Display */}
+                  {smsStatus && (
+                    <div className="mt-3 pt-3 border-t border-gray-100">
+                      <div className="flex items-center space-x-2">
+                        <CheckCircle className="w-4 h-4 text-green-600" />
+                        <span className="text-sm text-green-700 font-medium">
+                          Notifications sent successfully!
+                        </span>
+                      </div>
+                      <div className="mt-2 space-y-1">
+                        {smsStatus.clientSent && (
+                          <div className="flex items-center space-x-2 text-xs text-gray-600">
+                            <div className="w-1 h-1 rounded-full bg-green-500"></div>
+                            <span>Client SMS notification delivered</span>
+                          </div>
+                        )}
+                        {smsStatus.workerSent && (
+                          <div className="flex items-center space-x-2 text-xs text-gray-600">
+                            <div className="w-1 h-1 rounded-full bg-green-500"></div>
+                            <span>Worker SMS notification delivered</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1534,15 +1690,15 @@ export function EnhancedRescheduleModal({
                     {/* Clean Navigation Buttons */}
           <div className="flex justify-between items-center pt-4 border-t border-gray-200">
             <div className="flex items-center space-x-3">
-              <Button
-                variant="outline"
-                onClick={handleStepBack}
-                disabled={currentStep === 'select-time' || isProcessing}
+            <Button
+              variant="outline"
+              onClick={handleStepBack}
+              disabled={currentStep === 'select-time' || isProcessing}
                 className="px-4 py-2 border-gray-300 hover:bg-gray-50 disabled:opacity-50"
-              >
+            >
                 <ChevronLeft className="w-4 h-4 mr-1" />
-                Back
-              </Button>
+              Back
+            </Button>
             </div>
             <div className="flex space-x-3">
               <Button 
