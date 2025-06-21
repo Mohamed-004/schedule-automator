@@ -2,7 +2,7 @@
 
 import { CustomLink } from '@/components/ui/custom-link'
 import { usePathname } from 'next/navigation'
-import { Calendar, Users, Briefcase, Bell, ListTodo, Menu, X, Settings, LogOut } from 'lucide-react'
+import { Calendar, Users, Briefcase, Bell, ListTodo, Menu, X, Settings, LogOut, CalendarDays } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { cn } from '@/lib/utils'
 import { useOnClickOutside } from '@/hooks/use-on-click-outside'
@@ -11,7 +11,8 @@ const navLinks = [
   { href: '/dashboard', label: "Today's Schedule", icon: ListTodo },
   { href: '/dashboard/calendar', label: 'Calendar View', icon: Calendar },
   { href: '/dashboard/team', label: 'Team', icon: Users },
-  { href: '/dashboard/jobs', label: 'Jobs', icon: Briefcase },
+  { href: '/dashboard/jobs', label: 'Daily Timeline', icon: Briefcase },
+  { href: '/dashboard/planning', label: 'Weekly Planning', icon: CalendarDays },
   { href: '/dashboard/assign-jobs', label: 'Assign Jobs', icon: Briefcase },
   { href: '/dashboard/notifications', label: 'Notifications', icon: Bell },
 ]
