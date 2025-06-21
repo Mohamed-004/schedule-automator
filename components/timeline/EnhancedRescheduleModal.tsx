@@ -28,12 +28,18 @@ import {
   CalendarIcon, 
   CheckCircle, 
   AlertTriangle, 
+  AlertCircle,
+  Briefcase,
   Loader2, 
   Info, 
   RefreshCw, 
   Zap,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  Search
 } from 'lucide-react'
 
 /**
@@ -104,6 +110,7 @@ export function EnhancedRescheduleModal({
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined)
   const [selectedTime, setSelectedTime] = useState<string>('')
   const [selectedWorkerId, setSelectedWorkerId] = useState<string>('')
+  const [currentCalendarDate, setCurrentCalendarDate] = useState<Date>(new Date())
   const [rescheduleReason, setRescheduleReason] = useState<string>('')
   const [notifyClient, setNotifyClient] = useState<boolean>(true)
   
@@ -121,6 +128,7 @@ export function EnhancedRescheduleModal({
   const [validationErrors, setValidationErrors] = useState<string[]>([])
   const [completeJobData, setCompleteJobData] = useState<Job | null>(null)
   const [isLoadingJobData, setIsLoadingJobData] = useState<boolean>(false)
+  const [availabilityMessage, setAvailabilityMessage] = useState<string>('')
 
   // Computed Values
   const availableWorkers = workerAvailability.filter(w => w.isAvailable)
@@ -244,8 +252,26 @@ export function EnhancedRescheduleModal({
       
       const data = await response.json()
       
+      // Filter out past dates and very early morning slots (before 6 AM)
+      const now = new Date()
+      const filteredSlots = (data.slots || []).filter((slot: NextAvailableSlot) => {
+        try {
+          const slotDate = parseISO(slot.dateTime)
+          // Remove past dates
+          if (slotDate <= now) return false
+          
+          // Remove very early morning slots (before 6 AM) unless explicitly enabled
+          const hour = slotDate.getHours()
+          if (hour < 6) return false
+          
+          return true
+        } catch {
+          return false
+        }
+      })
+      
       // Sort slots by worker utilization (lowest first) and then by date
-      const sortedSlots = (data.slots || []).sort((a: NextAvailableSlot, b: NextAvailableSlot) => {
+      const sortedSlots = filteredSlots.sort((a: NextAvailableSlot, b: NextAvailableSlot) => {
         // First sort by utilization (lower is better)
         if (a.utilizationPercentage !== b.utilizationPercentage) {
           return (a.utilizationPercentage || 0) - (b.utilizationPercentage || 0)
@@ -324,13 +350,41 @@ export function EnhancedRescheduleModal({
   const handleQuickSlotSelect = (slot: NextAvailableSlot) => {
     try {
       const slotDate = parseISO(slot.dateTime)
+      
+      // Ensure we have a valid date
+      if (isNaN(slotDate.getTime())) {
+        throw new Error('Invalid date in slot')
+      }
+      
+      // Set selectedDate as Date object (keeping existing type)
       setSelectedDate(slotDate)
       setSelectedTime(format(slotDate, 'HH:mm'))
       setSelectedWorkerId(slot.workerId)
+      
+      // Ensure the worker is available in workerAvailability for confirmation step
+      const workerExists = workerAvailability.find(w => w.workerId === slot.workerId)
+      if (!workerExists) {
+        // Add worker to availability with proper data
+        setWorkerAvailability(prev => [...prev, {
+          workerId: slot.workerId,
+          workerName: slot.workerName,
+          isAvailable: true,
+          utilizationPercentage: slot.utilizationPercentage || 0,
+          conflictingJobs: 0
+        }])
+      } else {
+        // Update existing worker data to ensure proper name is set
+        setWorkerAvailability(prev => prev.map(w => 
+          w.workerId === slot.workerId 
+            ? { ...w, workerName: slot.workerName, isAvailable: true }
+            : w
+        ))
+      }
+      
       setCurrentStep('confirm')
     } catch (error) {
       console.error('Error selecting quick slot:', error)
-      setValidationErrors(['Invalid slot selected'])
+      setValidationErrors(['Invalid slot selected. Please try again.'])
     }
   }
 
@@ -353,12 +407,23 @@ export function EnhancedRescheduleModal({
   if (!job) return null
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+        <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="text-2xl font-bold">
-            Reschedule Appointment
-          </DialogTitle>
+        <DialogHeader className="pb-4 border-b border-gray-200">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center">
+              <Clock className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <DialogTitle className="text-xl font-semibold text-gray-900">
+                Reschedule Appointment
+              </DialogTitle>
+              <p className="text-sm text-gray-600 mt-0.5">
+                {job?.title ? `${job.title} - ` : ''}
+                {job?.client_name || 'Unknown Client'}
+              </p>
+            </div>
+          </div>
         </DialogHeader>
 
         <div className="space-y-6">
@@ -400,114 +465,126 @@ export function EnhancedRescheduleModal({
             </CollapsibleTrigger>
             <CollapsibleContent>
               <Card className="mt-2">
-                <CardContent className="pt-6">
+                <CardContent className="pt-4">
                   {isLoadingJobData ? (
                     <div className="flex items-center justify-center py-8">
-                      <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                      <span className="ml-2 text-muted-foreground">Loading job details...</span>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                        <div className="space-y-2">
-                          <div className="flex items-center space-x-2">
-                            <User className="w-4 h-4 text-muted-foreground" />
-                            <span className="font-medium">Client:</span>
-                            <span>{completeJobData?.client_name || job.client_name || job.clients?.name || 'No client assigned'}</span>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <User className="w-4 h-4 text-muted-foreground" />
-                            <span className="font-medium">Worker:</span>
-                            <span>{completeJobData?.worker_name || job.worker_name || job.workers?.name || job.worker?.name || 'No worker assigned'}</span>
-                          </div>
-                          {(completeJobData?.client_phone || job.client_phone || job.clients?.phone) && (
-                            <div className="flex items-center space-x-2">
-                              <Phone className="w-4 h-4 text-muted-foreground" />
-                              <span>{completeJobData?.client_phone || job.client_phone || job.clients?.phone}</span>
-                            </div>
-                          )}
-                          {(completeJobData?.location || job.location) && (
-                            <div className="flex items-center space-x-2">
-                              <MapPin className="w-4 h-4 text-muted-foreground" />
-                              <span>{completeJobData?.location || job.location}</span>
-                            </div>
-                          )}
-                        </div>
-                        <div className="space-y-2">
-                          <div className="flex items-center space-x-2">
-                            <Clock className="w-4 h-4 text-muted-foreground" />
-                            <span className="font-medium">Duration:</span>
-                            <span>
-                              {(() => {
-                                const minutes = completeJobData?.duration_minutes || job.duration_minutes || 60
-                                if (minutes >= 60) {
-                                  const hours = Math.floor(minutes / 60)
-                                  const remainingMinutes = minutes % 60
-                                  if (remainingMinutes === 0) {
-                                    return `${hours} hour${hours !== 1 ? 's' : ''}`
-                                  } else {
-                                    return `${hours}h ${remainingMinutes}m`
-                                  }
-                                } else {
-                                  return `${minutes} minutes`
-                                }
-                              })()}
-                            </span>
-                          </div>
-                          <div className="flex items-start space-x-2">
-                            <CalendarIcon className="w-4 h-4 text-muted-foreground mt-0.5" />
-                            <div className="flex-1 min-w-0">
-                              <span className="font-medium block">Current Time:</span>
-                              <div className="text-sm text-muted-foreground mt-1">
-                                {(() => {
-                                  try {
-                                    const scheduledAt = completeJobData?.scheduled_at || job.scheduled_at
-                                    
-                                    if (scheduledAt) {
-                                      // Clean the string of any unexpected characters
-                                      const cleanedDate = scheduledAt.toString().trim()
-                                      
-                                      let date: Date
-                                      if (cleanedDate.includes('T')) {
-                                        // ISO format: "2025-06-10T13:00:00+00:00"
-                                        date = parseISO(cleanedDate)
-                                      } else {
-                                        // PostgreSQL format: "2025-06-10 13:00:00+00"
-                                        date = new Date(cleanedDate)
-                                      }
-                                      
-                                      if (isNaN(date.getTime())) {
-                                        return `Invalid date (raw: ${cleanedDate})`
-                                      }
-                                      
-                                      const formattedDate = format(date, 'MMM dd, yyyy')
-                                      const formattedTime = format(date, 'h:mm a')
-                                      
-                                      return (
-                                        <div className="space-y-1">
-                                          <div className="font-medium">{formattedDate}</div>
-                                          <div className="text-lg font-semibold text-foreground">{formattedTime}</div>
-                                        </div>
-                                      )
-                                    }
-                                    return 'Not scheduled'
-                                  } catch (error) {
-                                    console.error('Date formatting error:', error)
-                                    return `Error: ${error instanceof Error ? error.message : 'Unknown error'}`
-                                  }
-                                })()}
-                              </div>
-                            </div>
-                          </div>
-                          <Badge variant="secondary">{completeJobData?.status || job.status}</Badge>
-                        </div>
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                      <span className="ml-3 text-gray-600">Loading appointment details...</span>
                       </div>
-                      {(completeJobData?.description || job.description) && (
-                        <div className="mt-4 pt-4 border-t">
-                          <p className="text-sm text-muted-foreground">{completeJobData?.description || job.description}</p>
+                                      ) : completeJobData ? (
+                     <div className="space-y-6">
+                       {/* 👤 CLIENT INFO Section */}
+                       <div className="space-y-4">
+                         <div className="flex items-center space-x-3">
+                           <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center ring-1 ring-blue-100">
+                             <User className="w-4 h-4 text-blue-600" />
+                        </div>
+                           <h4 className="text-sm font-medium text-blue-700">Client Information</h4>
+                         </div>
+                         <div className="pl-11 space-y-3">
+                           <div className="flex items-center space-x-3">
+                             <div className="w-5 h-5 flex items-center justify-center">
+                               <User className="w-4 h-4 text-gray-500" />
+                             </div>
+                             <span className="text-sm font-medium text-gray-900">{completeJobData.client_name || 'Unknown Client'}</span>
+                           </div>
+                           {completeJobData.client_phone && (
+                             <div className="flex items-center space-x-3">
+                               <div className="w-5 h-5 flex items-center justify-center">
+                                 <Phone className="w-4 h-4 text-gray-500" />
+                               </div>
+                               <span className="text-sm text-gray-700">{completeJobData.client_phone}</span>
                         </div>
                       )}
-                    </>
+                    </div>
+                      </div>
+
+                       {/* 📋 JOB INFO Section */}
+                       <div className="space-y-4">
+                         <div className="flex items-center space-x-3">
+                           <div className="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center ring-1 ring-emerald-100">
+                             <Briefcase className="w-4 h-4 text-emerald-600" />
+                    </div>
+                           <h4 className="text-sm font-medium text-emerald-700">Service Details</h4>
+                  </div>
+                         <div className="pl-11 space-y-3">
+                           <div className="flex items-center space-x-3">
+                             <div className="w-5 h-5 flex items-center justify-center">
+                               <Clock className="w-4 h-4 text-gray-500" />
+                             </div>
+                             <span className="text-sm text-gray-700">
+                               Duration: <span className="font-medium text-gray-900">{completeJobData.duration_minutes ? `${Math.floor(completeJobData.duration_minutes / 60)} hour${Math.floor(completeJobData.duration_minutes / 60) !== 1 ? 's' : ''}` : 'Unknown'}</span>
+                             </span>
+                           </div>
+                           <div className="flex items-center space-x-3">
+                             <div className="w-5 h-5 flex items-center justify-center">
+                               <CalendarIcon className="w-4 h-4 text-gray-500" />
+                             </div>
+                             <span className="text-sm text-gray-700">
+                               {completeJobData.scheduled_at ? (() => {
+                                 try {
+                                   const startDate = new Date(completeJobData.scheduled_at);
+                                   return format(startDate, "EEEE, MMMM dd, yyyy 'at' h:mm a");
+                                 } catch (error) {
+                                   console.error('Date parsing error:', error);
+                                   return 'Invalid date';
+                                 }
+                               })() : 'No date set'}
+                             </span>
+                           </div>
+                         </div>
+                       </div>
+
+                       {/* 👷 ASSIGNED WORKER Section */}
+                       <div className="space-y-4">
+                         <div className="flex items-center space-x-3">
+                           <div className="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center ring-1 ring-amber-100">
+                             <User className="w-4 h-4 text-amber-600" />
+                           </div>
+                           <h4 className="text-sm font-medium text-amber-700">Assigned Team Member</h4>
+                         </div>
+                         <div className="pl-11 space-y-3">
+                           <div className="flex items-center space-x-3">
+                             <div className="w-5 h-5 flex items-center justify-center">
+                               <User className="w-4 h-4 text-gray-500" />
+                             </div>
+                             <span className="text-sm font-medium text-gray-900">{completeJobData.worker_name || 'No worker assigned'}</span>
+                           </div>
+                           <div className="flex items-center space-x-3">
+                             <div className="w-5 h-5 flex items-center justify-center">
+                               <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                             </div>
+                             <Badge className="bg-emerald-500 text-white border border-emerald-600 hover:bg-emerald-600 text-xs font-medium">
+                               ✓ Confirmed
+                             </Badge>
+                           </div>
+                         </div>
+                       </div>
+
+                       {/* 📝 JOB NOTES Section */}
+                       {completeJobData.description && (
+                         <div className="space-y-4">
+                           <div className="flex items-center space-x-3">
+                             <div className="w-8 h-8 rounded-full bg-violet-50 flex items-center justify-center ring-1 ring-violet-100">
+                               <FileText className="w-4 h-4 text-violet-600" />
+                             </div>
+                             <h4 className="text-sm font-medium text-violet-700">Additional Notes</h4>
+                           </div>
+                           <div className="pl-11">
+                             <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                               <p className="text-sm text-gray-700 leading-relaxed">{completeJobData.description}</p>
+                             </div>
+                           </div>
+                         </div>
+                       )}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
+                        <AlertCircle className="w-5 h-5 text-gray-400" />
+                      </div>
+                      <p className="text-sm text-gray-600">Unable to load appointment details</p>
+                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -531,216 +608,430 @@ export function EnhancedRescheduleModal({
 
           {/* Step Content */}
           {currentStep === 'select-time' && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Clock className="w-5 h-5" />
-                  <span>Select New Date & Time</span>
+            <Card className="border-0 shadow-none">
+              <CardHeader className="px-0 pb-4">
+                <CardTitle className="flex items-center space-x-3 text-xl">
+                  <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                    <Clock className="w-4 h-4 text-gray-600" />
+                  </div>
+                  <span className="text-gray-900">Select New Date & Time</span>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Date Picker */}
-                  <div className="space-y-2">
-                    <Label htmlFor="date-picker">Date</Label>
+              <CardContent className="px-0 space-y-8">
+                {/* Date and Time Selection - Vertically Stacked */}
+                <div className="space-y-6">
+                  {/* Date Picker Section */}
+                  <div className="space-y-3">
+                    <Label htmlFor="date-picker" className="text-sm font-medium text-gray-700">
+                      Choose Date
+                    </Label>
                     <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
                       <PopoverTrigger asChild>
                         <Button
                           id="date-picker"
                           variant="outline"
                           className={cn(
-                            "w-full justify-start text-left font-normal",
-                            !selectedDate && "text-muted-foreground"
+                            "w-full justify-start text-left font-normal h-11 px-4 border-gray-200 hover:border-gray-300 transition-colors",
+                            !selectedDate && "text-gray-500"
                           )}
                         >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {selectedDate ? format(selectedDate, "PPP") : "Pick a date"}
+                          <CalendarIcon className="mr-3 h-4 w-4 text-gray-500" />
+                          {selectedDate ? format(selectedDate, "EEEE, MMMM dd, yyyy") : "Select appointment date"}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <div className="p-3 border-b">
-                          <h4 className="font-medium text-sm">Select a date</h4>
-                          <p className="text-xs text-muted-foreground">Choose when to reschedule this appointment</p>
+                      <PopoverContent className="w-auto p-0" align="center" side="bottom" sideOffset={4}>
+                        {/* Clean Calendar Header */}
+                        <div className="p-4 border-b bg-gray-50">
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="font-medium text-gray-900">Select a date</h4>
+                            {/* Calendar Navigation Controls */}
+                            <div className="flex items-center space-x-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 w-7 p-0 border-gray-200"
+                                onClick={() => {
+                                  const newDate = new Date(currentCalendarDate);
+                                  newDate.setMonth(newDate.getMonth() - 1);
+                                  setCurrentCalendarDate(newDate);
+                                }}
+                              >
+                                <ChevronLeft className="h-3 w-3" />
+                              </Button>
+                              <span className="text-sm font-medium text-gray-700 min-w-[120px] text-center">
+                                {format(currentCalendarDate, "MMMM yyyy")}
+                              </span>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 w-7 p-0 border-gray-200"
+                                onClick={() => {
+                                  const newDate = new Date(currentCalendarDate);
+                                  newDate.setMonth(newDate.getMonth() + 1);
+                                  setCurrentCalendarDate(newDate);
+                                }}
+                              >
+                                <ChevronRight className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                          <p className="text-xs text-gray-600">Choose when to reschedule this appointment</p>
                         </div>
+                        
+                        {/* Professional Calendar */}
+                        <div className="p-3">
                         <Calendar
                           mode="single"
                           selected={selectedDate}
                           onSelect={(date) => {
-                            setSelectedDate(date)
-                            setIsCalendarOpen(false)
-                            // Clear validation errors when date changes
-                            setValidationErrors(prev => prev.filter(error => !error.includes('time')))
-                            // Clear previous worker availability when date changes
-                            setWorkerAvailability([])
-                          }}
-                          disabled={(date) => 
-                            isBefore(date, startOfDay(new Date())) ||
-                            isAfter(date, addDays(new Date(), 90))
-                          }
-                          initialFocus
-                          className="rounded-md"
-                        />
-                        <div className="p-3 border-t bg-muted/30">
-                          <p className="text-xs text-muted-foreground">
-                            Available dates: Today to {format(addDays(new Date(), 90), 'MMM dd, yyyy')}
-                          </p>
+                              if (date) {
+                                setSelectedDate(date);
+                                setIsCalendarOpen(false);
+                                // Clear validation errors when date changes
+                                setValidationErrors(prev => prev.filter(error => !error.includes('time')));
+                                // Clear previous worker availability when date changes
+                                setWorkerAvailability([]);
+                              }
+                            }}
+                            month={currentCalendarDate}
+                            onMonthChange={setCurrentCalendarDate}
+                            disabled={(date) => date < new Date() || date > new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)}
+                            className="rounded-md border-none"
+                            classNames={{
+                              months: "flex flex-col sm:flex-row space-y-2 sm:space-x-2 sm:space-y-0",
+                              month: "space-y-2",
+                              caption: "hidden", // Hide default caption since we have custom navigation
+                              caption_label: "hidden",
+                              nav: "hidden", // Hide default navigation
+                              nav_button: "hidden",
+                              nav_button_previous: "hidden",
+                              nav_button_next: "hidden",
+                              table: "w-full border-collapse space-y-1",
+                              head_row: "flex",
+                              head_cell: "text-gray-500 rounded-md w-7 font-normal text-[0.75rem]",
+                              row: "flex w-full mt-1",
+                              cell: "text-center text-sm p-0 relative [&:has([aria-selected])]:bg-gray-100 first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20",
+                              day: "h-7 w-7 p-0 font-normal text-gray-700 hover:bg-gray-100 rounded-md transition-colors",
+                              day_selected: "bg-gray-900 text-white hover:bg-gray-800 focus:bg-gray-900 focus:text-white",
+                              day_today: "bg-gray-100 text-gray-900 font-medium",
+                              day_outside: "text-gray-400",
+                              day_disabled: "text-gray-300 opacity-50",
+                              day_range_middle: "aria-selected:bg-gray-100 aria-selected:text-gray-900",
+                              day_hidden: "invisible",
+                            }}
+                          />
                         </div>
                       </PopoverContent>
                     </Popover>
                   </div>
 
-                  {/* Time Picker with real-time validation */}
-                  <div className="space-y-2">
-                    <Label htmlFor="time-picker">Time</Label>
-                    <Input
+                  {/* Time Picker */}
+                  <div className="space-y-4">
+                    <Label htmlFor="time-picker" className="text-sm font-medium text-gray-700">
+                      Choose Time
+                    </Label>
+                    <div className="relative">
+                      <input
                       id="time-picker"
                       type="time"
                       value={selectedTime}
-                      onChange={(e) => {
-                        setSelectedTime(e.target.value)
-                        // Clear previous validation errors
-                        setValidationErrors(prev => prev.filter(error => !error.includes('time')))
-                        // Clear previous worker availability when time changes
-                        setWorkerAvailability([])
-                      }}
-                      step="900" // 15 minute intervals
-                      className="w-full"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Select any time (24-hour format)
-                    </p>
-                    
-                    {/* Real-time availability check */}
-                    {selectedDate && selectedTime && (
-                      <div className="mt-3 p-3 rounded-lg border bg-muted/30">
-                        {isCheckingAvailability ? (
-                          <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            <span>Checking availability for {completeJobData?.duration_minutes || job.duration_minutes || 60} minute appointment...</span>
-                          </div>
-                        ) : workerAvailability.length > 0 ? (
-                          <div className="text-sm">
-                            {availableWorkers.length > 0 ? (
-                              <div className="flex items-center space-x-2 text-green-700">
-                                <CheckCircle className="w-4 h-4" />
-                                <span className="font-medium">
-                                  {availableWorkers.length} worker{availableWorkers.length !== 1 ? 's' : ''} available
-                                </span>
-                                <span className="text-green-600">
-                                  for {format(selectedDate, 'MMM dd')} at {selectedTime}
-                                </span>
-                              </div>
-                            ) : (
-                              <div className="flex items-center space-x-2 text-red-700">
-                                <AlertTriangle className="w-4 h-4" />
-                                <span className="font-medium">No workers available</span>
-                                <span className="text-red-600">
-                                  for {format(selectedDate, 'MMM dd')} at {selectedTime}
-                                </span>
-                              </div>
-                            )}
-                                                        <div className="mt-1 text-xs text-muted-foreground">
-                               Duration: {completeJobData?.duration_minutes || job.duration_minutes || 60} minutes
-                               {availableWorkers.length === 0 && workerAvailability.length > 0 && (
-                                 <div className="mt-1 text-orange-600 font-medium">
-                                   Try the Quick Reschedule Options below for alternative times
-                                 </div>
-                               )}
-                             </div>
-                          </div>
-                        ) : null}
-                      </div>
-                    )}
+                        onChange={(e) => {
+                          setSelectedTime(e.target.value);
+                          // Clear validation errors when time changes
+                          setValidationErrors(prev => prev.filter(error => !error.includes('time')));
+                        }}
+                        className="w-full h-11 px-4 text-base border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                        placeholder="Select time"
+                      />
+                    </div>
                   </div>
                 </div>
 
-                {/* Quick Slots Section */}
-                <div className="space-y-4 pt-4 border-t">
+                {/* Validation Errors */}
+                {validationErrors.length > 0 && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <div className="flex items-start space-x-3">
+                      <div className="flex-shrink-0">
+                        <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-sm font-medium text-red-800">Please fix the following:</h3>
+                        <ul className="mt-2 text-sm text-red-700 space-y-1">
+                          {validationErrors.map((error, index) => (
+                            <li key={index}>• {error}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Worker Availability Check */}
+                {selectedDate && selectedTime && (
+                  <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-medium text-gray-900">Availability Check</h3>
+                      {isCheckingAvailability && (
+                        <div className="flex items-center space-x-2">
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+                          <span className="text-xs text-gray-600">Checking...</span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {workerAvailability.length > 0 ? (
+                      <div className="space-y-2">
+                        {workerAvailability.map((worker) => (
+                          <div key={worker.workerId} className="flex items-center justify-between p-2 bg-white rounded border">
+                            <span className="text-sm text-gray-700">{worker.workerName}</span>
+                            <span className={`text-xs px-2 py-1 rounded-full ${
+                              worker.isAvailable 
+                                ? 'bg-green-100 text-green-800' 
+                                : 'bg-red-100 text-red-800'
+                            }`}>
+                              {worker.isAvailable ? '✓ Available' : '✗ Unavailable'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : availabilityMessage && (
+                      <p className="text-sm text-gray-600">{availabilityMessage}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Smart Time Slot Suggestions */}
+                <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h4 className="font-medium flex items-center space-x-2">
-                      <Zap className="w-4 h-4 text-blue-500" />
-                      <span>Quick Reschedule Options</span>
-                    </h4>
+                    <Label className="text-sm font-medium text-gray-700">Smart Time Suggestions</Label>
                     <Button
-                      variant="outline"
-                      size="sm"
                       onClick={loadNextAvailableSlots}
                       disabled={isLoadingNextSlots}
+                      size="sm"
+                      className="h-8 px-3 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white border-0 shadow-sm"
                     >
                       {isLoadingNextSlots ? (
-                        <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Loading...</>
+                        <div className="animate-spin rounded-full h-3 w-3 border border-white border-t-transparent"></div>
                       ) : (
-                        <><RefreshCw className="w-4 h-4 mr-2" />Find Available Slots</>
+                        <>
+                          <svg className="w-3 h-3 mr-1.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 2L14.09 8.26L22 9L14.09 9.74L12 16L9.91 9.74L2 9L9.91 8.26L12 2Z" fill="currentColor"/>
+                            <path d="M6 18L7.5 21.5L11 22L7.5 22.5L6 26L4.5 22.5L1 22L4.5 21.5L6 18Z" fill="currentColor"/>
+                          </svg>
+                          Suggest Times
+                        </>
                       )}
                     </Button>
                   </div>
 
-                  {nextAvailableSlots.length > 0 && (
-                    <div className="grid gap-2">
-                      {nextAvailableSlots.slice(0, 5).map((slot, index) => {
-                        const slotDate = parseISO(slot.dateTime)
-                        const isSlotToday = isToday(slotDate)
-                        const isSlotTomorrow = isTomorrow(slotDate)
-                        
-                        let dateLabel = ''
-                        if (isSlotToday) {
-                          dateLabel = 'Today'
-                        } else if (isSlotTomorrow) {
-                          dateLabel = 'Tomorrow'
-                        } else {
-                          dateLabel = format(slotDate, 'EEE, MMM dd')
-                        }
-                        
-                        const utilizationColor = 
-                          (slot.utilizationPercentage || 0) < 30 ? 'bg-green-500' :
-                          (slot.utilizationPercentage || 0) < 60 ? 'bg-yellow-500' : 'bg-red-500'
-                        
-                        return (
-                          <Button
-                            key={index}
-                            variant="outline"
-                            className="justify-between h-auto p-3 text-left hover:bg-muted/50"
+                  {/* Available Time Slots Display */}
+                  <div className="space-y-3">
+                    {nextAvailableSlots.length > 0 ? (
+                      <div className="grid gap-3">
+                        {nextAvailableSlots
+                          .sort((a, b) => (a.utilizationPercentage || 0) - (b.utilizationPercentage || 0))
+                          .slice(0, 5).map((slot, index) => (
+                          <div
+                            key={`${slot.workerId}-${slot.dateTime}-${index}`}
                             onClick={() => handleQuickSlotSelect(slot)}
+                            className="p-4 rounded-lg border border-gray-200 bg-white hover:border-blue-300 hover:shadow-sm cursor-pointer transition-all duration-200"
                           >
-                            <div className="flex items-center space-x-3">
-                              <div className={`w-2 h-2 rounded-full ${utilizationColor}`} />
-                              <div>
-                                <p className="font-medium">{slot.workerName}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  {dateLabel} at {format(slotDate, 'h:mm a')}
-                                </p>
+                            <div className="space-y-3">
+                              <div className="flex items-start space-x-3">
+                                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                                  <span className="text-sm font-medium text-blue-700">
+                                    {slot.workerName.split(' ').map(n => n[0]).join('')}
+                                  </span>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between mb-1">
+                                    <p className="text-sm font-medium text-gray-900 truncate">{slot.workerName}</p>
+                                    <span className="text-xs font-medium text-gray-600 ml-2">{slot.utilizationPercentage || 0}% busy</span>
+                                  </div>
+                                  
+                                  {/* Utilization Progress Bar */}
+                                  <div className="mb-2">
+                                    <div className="w-full bg-gray-200 rounded-full h-2 shadow-sm">
+                                      <div 
+                                        className={cn(
+                                          "h-2 rounded-full transition-all duration-300 shadow-sm",
+                                          (slot.utilizationPercentage || 0) < 30 && "bg-emerald-500",
+                                          (slot.utilizationPercentage || 0) >= 30 && (slot.utilizationPercentage || 0) < 70 && "bg-amber-500", 
+                                          (slot.utilizationPercentage || 0) >= 70 && "bg-red-500"
+                                        )}
+                                        style={{ width: `${Math.min(slot.utilizationPercentage || 0, 100)}%` }}
+                                      />
+                                    </div>
+                                  </div>
+                                  
+                                  <p className="text-xs text-gray-500">
+                                    {(() => {
+                                      try {
+                                        const slotDate = parseISO(slot.dateTime);
+                                        const today = new Date();
+                                        const tomorrow = addDays(today, 1);
+                                        
+                                        if (isToday(slotDate)) {
+                                          return `Today at ${format(slotDate, 'h:mm a')}`;
+                                        } else if (isTomorrow(slotDate)) {
+                                          return `Tomorrow at ${format(slotDate, 'h:mm a')}`;
+                                        } else {
+                                          return format(slotDate, 'MMM d, h:mm a');
+                                        }
+                                      } catch {
+                                        return 'Invalid date';
+                                      }
+                                    })()}
+                                  </p>
+                                </div>
+                              </div>
+                              
+                              {/* Badge Showcase */}
+                              <div className="flex items-center space-x-2 pt-2 border-t border-gray-100">
+                                <Badge className={cn(
+                                  "text-xs font-medium px-2.5 py-1 border",
+                                  (slot.utilizationPercentage || 0) < 30 && "bg-emerald-500 text-white border-emerald-600",
+                                  (slot.utilizationPercentage || 0) >= 30 && (slot.utilizationPercentage || 0) < 70 && "bg-amber-500 text-white border-amber-600",
+                                  (slot.utilizationPercentage || 0) >= 70 && "bg-red-500 text-white border-red-600"
+                                )}>
+                                  {(slot.utilizationPercentage || 0) < 30 ? "Available" : 
+                                   (slot.utilizationPercentage || 0) < 70 ? "Busy" : "Very Busy"}
+                                </Badge>
+                                {index === 0 && (
+                                  <Badge className="bg-blue-50 text-blue-600 border-0 text-xs font-medium px-2.5 py-1">
+                                    <svg className="w-2.5 h-2.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                                    </svg>
+                                    Recommended
+                                  </Badge>
+                                )}
                               </div>
                             </div>
-                            <div className="flex flex-col items-end space-y-1">
-                              <Badge variant="secondary" className="text-xs">
-                                {index === 0 ? 'Recommended' : 'Available'}
-                              </Badge>
-                              {slot.utilizationPercentage !== undefined && (
-                                <span className="text-xs text-muted-foreground">
-                                  {Math.round(slot.utilizationPercentage)}% busy
-                                </span>
-                              )}
-                            </div>
-                          </Button>
-                        )
-                      })}
-                    </div>
-                  )}
-
-                  {isLoadingNextSlots && (
-                    <div className="flex items-center justify-center py-4">
-                      <div className="flex items-center space-x-2 text-muted-foreground">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span className="text-sm">Finding next available slots...</span>
+                          </div>
+                        ))}
                       </div>
-                    </div>
-                  )}
-
-                  {!isLoadingNextSlots && nextAvailableSlots.length === 0 && (
-                    <p className="text-sm text-muted-foreground text-center py-4">
-                      Click "Find Available Slots" to see next available times
-                    </p>
-                  )}
+                    ) : workerAvailability.length > 0 ? (
+                      <div className="grid gap-2">
+                        {workerAvailability
+                          .filter(w => w.isAvailable)
+                          .sort((a, b) => a.utilizationPercentage - b.utilizationPercentage)
+                          .map((worker, index) => (
+                          <div
+                            key={`${worker.workerId}-${index}`}
+                            onClick={() => {
+                              setSelectedWorkerId(worker.workerId);
+                              // Keep the current selected time since this is for worker selection
+                              setValidationErrors([]);
+                            }}
+                            className={cn(
+                              "p-4 rounded-xl border cursor-pointer transition-all duration-300 hover:shadow-md",
+                              selectedWorkerId === worker.workerId
+                                ? "border-blue-500 bg-blue-600 shadow-lg transform scale-[1.02]"
+                                : "border-gray-200 bg-white hover:border-blue-300 hover:shadow-sm"
+                            )}
+                          >
+                            <div className="space-y-3">
+                              <div className="flex items-center space-x-3">
+                                <div className={cn(
+                                  "w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shadow-sm",
+                                  selectedWorkerId === worker.workerId
+                                    ? "bg-white text-blue-600"
+                                    : "bg-blue-100 text-blue-700"
+                                )}>
+                                  {worker.workerName.split(' ').map(n => n[0]).join('').toUpperCase()}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between mb-1">
+                                    <p className={cn(
+                                      "font-semibold truncate",
+                                      selectedWorkerId === worker.workerId ? "text-white" : "text-gray-900"
+                                    )}>
+                                      {worker.workerName}
+                                    </p>
+                                    <span className={cn(
+                                      "text-xs font-medium ml-2",
+                                      selectedWorkerId === worker.workerId ? "text-blue-100" : "text-gray-600"
+                                    )}>
+                                      {worker.utilizationPercentage}% busy
+                                    </span>
+                                  </div>
+                                  
+                                  {/* Utilization Progress Bar */}
+                                  <div className="mb-2">
+                                    <div className={cn(
+                                      "w-full rounded-full h-2 shadow-sm",
+                                      selectedWorkerId === worker.workerId ? "bg-blue-500" : "bg-gray-200"
+                                    )}>
+                                      <div 
+                                        className={cn(
+                                          "h-2 rounded-full transition-all duration-300 shadow-sm",
+                                          selectedWorkerId === worker.workerId
+                                            ? "bg-white"
+                                            : worker.utilizationPercentage < 30 ? "bg-emerald-500"
+                                            : worker.utilizationPercentage < 70 ? "bg-amber-500" 
+                                            : "bg-red-500"
+                                        )}
+                                        style={{ width: `${Math.min(worker.utilizationPercentage, 100)}%` }}
+                                      />
+                                    </div>
+                                  </div>
+                                  
+                                  <p className={cn(
+                                    "text-sm",
+                                    selectedWorkerId === worker.workerId ? "text-blue-100" : "text-gray-600"
+                                  )}>
+                                    {worker.nextAvailableSlot ? `Next: ${worker.nextAvailableSlot}` : 'Available now'}
+                                  </p>
+                                </div>
+                              </div>
+                              
+                              {/* Badge Showcase */}
+                              <div className={cn(
+                                "flex items-center space-x-2 pt-3 border-t",
+                                selectedWorkerId === worker.workerId ? "border-blue-400" : "border-gray-100"
+                              )}>
+                                <Badge className={cn(
+                                  "text-xs font-medium px-2.5 py-1 border",
+                                  selectedWorkerId === worker.workerId
+                                    ? "bg-white text-blue-600 border-white"
+                                    : worker.utilizationPercentage < 30 ? "bg-emerald-500 text-white border-emerald-600"
+                                    : worker.utilizationPercentage < 70 ? "bg-amber-500 text-white border-amber-600"
+                                    : "bg-red-500 text-white border-red-600"
+                                )}>
+                                  {worker.utilizationPercentage < 30 ? 'Available' 
+                                   : worker.utilizationPercentage < 70 ? 'Busy' 
+                                   : 'Very Busy'}
+                                </Badge>
+                                {index === 0 && (
+                                  <Badge className={cn(
+                                    "text-xs font-medium px-2.5 py-1 border-0",
+                                    selectedWorkerId === worker.workerId
+                                      ? "bg-white text-blue-600"
+                                      : "bg-blue-50 text-blue-600"
+                                  )}>
+                                    <svg className="w-2.5 h-2.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                                    </svg>
+                                    Recommended
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-8">
+                          <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
+                            <Search className="w-5 h-5 text-gray-400" />
+                          </div>
+                          <p className="text-sm text-gray-600 mb-2">No suggestions yet</p>
+                          <p className="text-xs text-gray-500">Click "Find Available Times" to see suggested slots</p>
+                        </div>
+                      )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -749,13 +1040,21 @@ export function EnhancedRescheduleModal({
           {currentStep === 'choose-worker' && (
             <div className="space-y-6">
               <Card>
-                <CardHeader>
+                <CardHeader className="pb-4">
                   <CardTitle className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <User className="w-5 h-5" />
-                      <span>Choose Worker</span>
+                    <div className="flex items-center space-x-3">
+                      <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                        <User className="w-4 h-4 text-blue-600" />
                     </div>
-                    <Badge variant="outline" className="text-xs">
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900">Select Team Member</h3>
+                        <p className="text-sm text-gray-500 mt-0.5">Choose who will handle this appointment</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="flex items-center space-x-1 text-sm text-gray-600">
+                        <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                        <span className="font-medium">
                       {selectedDate && (() => {
                         try {
                           return format(selectedDate, 'MMM dd')
@@ -763,7 +1062,9 @@ export function EnhancedRescheduleModal({
                           return 'Invalid'
                         }
                       })()} at {selectedTime}
-                    </Badge>
+                        </span>
+                      </div>
+                    </div>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -778,38 +1079,104 @@ export function EnhancedRescheduleModal({
                     <div className="space-y-4">
                       {/* Available Workers */}
                       {availableWorkers.length > 0 && (
-                        <div className="space-y-3">
-                          <h4 className="font-medium text-green-700 flex items-center space-x-2">
-                            <CheckCircle className="w-4 h-4" />
-                            <span>Available Workers</span>
-                          </h4>
+                        <div className="space-y-5">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center">
+                              <CheckCircle className="w-4 h-4 text-blue-600" />
+                            </div>
+                            <div>
+                              <h4 className="text-base font-semibold text-gray-900">Available Team Members</h4>
+                              <p className="text-sm text-gray-500">Ready to take this appointment</p>
+                            </div>
+                          </div>
                           <div className="grid gap-3">
                             {availableWorkers.map((worker) => (
                               <div
                                 key={worker.workerId}
                                 className={cn(
-                                  "p-4 border rounded-lg cursor-pointer transition-all",
+                                  "group relative p-4 border rounded-xl cursor-pointer transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 min-h-[120px]",
                                   selectedWorkerId === worker.workerId
-                                    ? "border-primary bg-primary/5 ring-2 ring-primary/20"
-                                    : "border-border hover:border-primary/50 hover:bg-muted/50"
+                                    ? "border-blue-300 bg-blue-50/60 ring-2 ring-blue-200 shadow-md"
+                                    : "border-gray-200 hover:border-blue-300 hover:bg-blue-50/20 bg-white"
                                 )}
                                 onClick={() => setSelectedWorkerId(worker.workerId)}
                               >
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center space-x-3">
-                                    <div className="w-2 h-2 rounded-full bg-green-500" />
-                                    <span className="font-medium">{worker.workerName}</span>
+                                <div className="grid grid-cols-12 gap-4 items-center h-full">
+                                  {/* Avatar and Name Section */}
+                                  <div className="col-span-8 flex items-center space-x-3">
+                                    <div className="relative">
+                                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-sm">
+                                        <span className="text-sm font-bold text-white">
+                                          {worker.workerName.split(' ').map(n => n[0]).join('').toUpperCase()}
+                                        </span>
+                                      </div>
+                                      <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white flex items-center justify-center">
+                                        <CheckCircle className="w-1.5 h-1.5 text-white" />
+                                      </div>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center space-x-2 mb-1">
+                                        <h5 className="text-base font-semibold text-gray-900 truncate">{worker.workerName}</h5>
+                                        {selectedWorkerId === worker.workerId && (
+                                          <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"></div>
+                                        )}
                                   </div>
                                   <div className="flex items-center space-x-2">
+                                        {worker.utilizationPercentage <= 30 && (
+                                          <div className="inline-flex items-center space-x-1 px-2.5 py-0.5 bg-blue-50 text-blue-600 rounded-full">
+                                            <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                                            </svg>
+                                            <span className="text-xs font-medium">Recommended</span>
+                                          </div>
+                                        )}
+                                        <div className="inline-flex items-center space-x-1 px-2.5 py-0.5 bg-gray-100 text-gray-600 rounded-full">
+                                          <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+                                          <span className="text-xs font-medium">Available</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Time and Status Section */}
+                                  <div className="col-span-4 flex flex-col items-end space-y-2">
+                                    <div className="flex items-center space-x-1.5 text-sm text-gray-600">
+                                      <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      </svg>
+                                      <span className="font-medium">
+                                        {(() => {
+                                          try {
+                                            const [hours, minutes] = selectedTime.split(':')
+                                            const date = new Date()
+                                            date.setHours(parseInt(hours), parseInt(minutes))
+                                            return format(date, 'h:mm a')
+                                          } catch {
+                                            return selectedTime
+                                          }
+                                        })()}
+                                      </span>
+                                    </div>
                                     <TooltipProvider>
                                       <Tooltip>
                                         <TooltipTrigger asChild>
-                                          <Badge variant="secondary" className="text-xs">
-                                            {worker.utilizationPercentage}% Utilized
-                                          </Badge>
+                                          <div className="inline-flex items-center space-x-1 px-2.5 py-0.5 bg-gray-100 text-gray-600 rounded-full cursor-help">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+                                            <span className="text-xs font-medium">{worker.utilizationPercentage}% busy</span>
+                                          </div>
                                         </TooltipTrigger>
                                         <TooltipContent>
-                                          <p>Current utilization for this time period</p>
+                                          <div className="text-xs space-y-1">
+                                            <p className="font-medium">Workload Analysis</p>
+                                            <div className="flex items-center space-x-2">
+                                              <div className="w-2 h-2 rounded-full bg-blue-500" />
+                                              <span>Available for appointments</span>
+                                            </div>
+                                            <div className="flex items-center space-x-2">
+                                              <div className="w-2 h-2 rounded-full bg-gray-400" />
+                                              <span>{worker.utilizationPercentage <= 30 ? 'Light' : worker.utilizationPercentage <= 60 ? 'Moderate' : 'Heavy'} workload</span>
+                                            </div>
+                                          </div>
                                         </TooltipContent>
                                       </Tooltip>
                                     </TooltipProvider>
@@ -823,25 +1190,68 @@ export function EnhancedRescheduleModal({
 
                       {/* Unavailable Workers */}
                       {unavailableWorkers.length > 0 && (
-                        <div className="space-y-3">
-                          <h4 className="font-medium text-orange-700 flex items-center space-x-2">
-                            <AlertTriangle className="w-4 h-4" />
-                            <span>Unavailable Workers</span>
-                          </h4>
-                          <div className="grid gap-3">
+                        <div className="space-y-4 mt-8">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center">
+                              <AlertTriangle className="w-4 h-4 text-gray-500" />
+                            </div>
+                            <div>
+                              <h4 className="text-base font-semibold text-gray-900">Currently Unavailable</h4>
+                              <p className="text-sm text-gray-500">Team members with scheduling conflicts</p>
+                            </div>
+                          </div>
+                          <div className="grid gap-4">
                             {unavailableWorkers.map((worker) => (
                               <div
                                 key={worker.workerId}
-                                className="p-4 border border-orange-200 bg-orange-50 rounded-lg opacity-60"
+                                className="p-4 border border-gray-200 rounded-xl bg-gray-50/80 opacity-75 min-h-[120px]"
                               >
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center space-x-3">
-                                    <div className="w-2 h-2 rounded-full bg-orange-500" />
-                                    <span className="font-medium">{worker.workerName}</span>
+                                <div className="grid grid-cols-12 gap-4 items-center h-full">
+                                  {/* Avatar and Name Section */}
+                                  <div className="col-span-8 flex items-center space-x-3">
+                                    <div className="relative">
+                                      <div className="w-10 h-10 rounded-full bg-gray-400 flex items-center justify-center">
+                                        <span className="text-sm font-bold text-white">
+                                          {worker.workerName.split(' ').map(n => n[0]).join('').toUpperCase()}
+                                        </span>
                                   </div>
-                                  <Badge variant="destructive" className="text-xs">
-                                    {worker.conflictingJobs} conflicts
-                                  </Badge>
+                                      <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-gray-500 rounded-full border-2 border-white flex items-center justify-center">
+                                        <svg className="w-1.5 h-1.5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                          <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                        </svg>
+                                      </div>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center space-x-2 mb-1">
+                                        <h5 className="text-base font-semibold text-gray-700 truncate">{worker.workerName}</h5>
+                                      </div>
+                                      <div className="flex items-center space-x-2">
+                                        <div className="inline-flex items-center space-x-1 px-2.5 py-0.5 bg-gray-100 text-gray-600 rounded-full">
+                                          <div className="w-1.5 h-1.5 rounded-full bg-gray-500" />
+                                          <span className="text-xs font-medium">Unavailable</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Status Section */}
+                                  <div className="col-span-4 flex flex-col items-end space-y-2">
+                                    <div className="text-sm text-gray-500">
+                                      {worker.conflictingJobs && worker.conflictingJobs > 0 
+                                        ? "Has conflicts"
+                                        : "Off schedule"
+                                      }
+                                    </div>
+                                    <div className="inline-flex items-center space-x-1 px-2.5 py-0.5 bg-gray-100 text-gray-600 rounded-full">
+                                      <div className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+                                      <span className="text-xs font-medium">
+                                        {worker.conflictingJobs && worker.conflictingJobs > 0 
+                                          ? `${worker.conflictingJobs} conflict${worker.conflictingJobs !== 1 ? 's' : ''}`
+                                          : "Not working"
+                                        }
+                                      </span>
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
                             ))}
@@ -921,91 +1331,226 @@ export function EnhancedRescheduleModal({
           )}
 
           {currentStep === 'confirm' && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <CheckCircle className="w-5 h-5" />
-                  <span>Confirm Reschedule</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Summary */}
-                <div className="bg-muted/50 rounded-lg p-4">
-                  <h4 className="font-medium mb-3">Reschedule Summary</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <p className="text-muted-foreground">New Date & Time</p>
-                      <p className="font-medium">
-                        {selectedDate && (() => {
+            <div className="space-y-6">
+              {/* Clean Professional Header */}
+              <div className="flex items-center space-x-3 pb-4 border-b border-gray-200">
+                <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center">
+                  <CheckCircle className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Confirm Reschedule</h3>
+                  <p className="text-sm text-gray-600">Review the appointment changes below</p>
+                </div>
+              </div>
+
+              {/* Clean Summary Card */}
+              <div className="bg-gray-50 rounded-lg p-6 border border-gray-200">
+                <div className="flex items-center space-x-3 mb-5">
+                  <CalendarIcon className="w-5 h-5 text-gray-600" />
+                  <h4 className="text-base font-semibold text-gray-900">Reschedule Summary</h4>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* New Date & Time */}
+                  <div className="space-y-3">
+                    <p className="text-sm font-medium text-gray-700">New Date & Time</p>
+                    <div className="bg-white rounded-lg p-4 border border-gray-200">
+                      <p className="text-sm font-semibold text-gray-900">
+                        {selectedDate && selectedTime && (() => {
                           try {
-                            return format(selectedDate, 'EEEE, MMMM dd, yyyy')
+                            // Create a clean date object
+                            let dateObj;
+                            if (selectedDate instanceof Date) {
+                              dateObj = new Date(selectedDate);
+                            } else {
+                              dateObj = new Date(selectedDate);
+                            }
+                            
+                            // Parse time and set hours/minutes
+                            const [hours, minutes] = selectedTime.split(':').map(num => parseInt(num, 10));
+                            dateObj.setHours(hours, minutes, 0, 0);
+                            
+                            // Format with proper error handling
+                            if (isNaN(dateObj.getTime())) {
+                              return 'Invalid date selected';
+                            }
+                            
+                            return format(dateObj, 'EEEE, MMMM dd, yyyy \'at\' h:mm a');
                           } catch (error) {
-                            return 'Invalid date'
+                            console.error('Date formatting error:', error);
+                            return 'Invalid date format';
                           }
                         })()}
                       </p>
-                      <p className="font-medium">{selectedTime}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Assigned Worker</p>
-                      <p className="font-medium">
-                        {workerAvailability.find(w => w.workerId === selectedWorkerId)?.workerName || 'Unknown'}
+                      <p className="text-xs text-gray-500 mt-1">
+                        {selectedDate && (() => {
+                          try {
+                            const dateObj = selectedDate instanceof Date ? selectedDate : new Date(selectedDate);
+                            if (isToday(dateObj)) return 'Today';
+                            if (isTomorrow(dateObj)) return 'Tomorrow';
+                            return format(dateObj, 'EEEE');
+                          } catch {
+                            return '';
+                          }
+                        })()}
                       </p>
                     </div>
                   </div>
+
+                  {/* Assigned Worker */}
+                  <div className="space-y-3">
+                    <p className="text-sm font-medium text-gray-700">Assigned Worker</p>
+                    <div className="bg-white rounded-lg p-4 border border-gray-200">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium">
+                          {(() => {
+                            // Enhanced worker name resolution with proper fallbacks
+                            let workerName = 'Unknown Worker';
+                            
+                            // Try workerAvailability first
+                            const availabilityWorker = workerAvailability.find(w => w.workerId === selectedWorkerId);
+                            if (availabilityWorker?.workerName) {
+                              workerName = availabilityWorker.workerName;
+                            } else {
+                              // Fallback to workers array
+                              const worker = workers.find(w => w.id === selectedWorkerId);
+                              if (worker?.name) {
+                                workerName = worker.name;
+                              }
+                            }
+                            
+                            // Proper name formatting and initials
+                            const cleanName = workerName.trim();
+                            const nameParts = cleanName.split(' ');
+                            if (nameParts.length >= 2) {
+                              return (nameParts[0][0] + nameParts[1][0]).toUpperCase();
+                            }
+                            return cleanName.slice(0, 2).toUpperCase();
+                          })()}
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900">
+                            {(() => {
+                              // Enhanced worker name resolution with proper formatting
+                              let workerName = 'Unknown Worker';
+                              
+                              // Try workerAvailability first
+                              const availabilityWorker = workerAvailability.find(w => w.workerId === selectedWorkerId);
+                              if (availabilityWorker?.workerName) {
+                                workerName = availabilityWorker.workerName;
+                              } else {
+                                // Fallback to workers array
+                                const worker = workers.find(w => w.id === selectedWorkerId);
+                                if (worker?.name) {
+                                  workerName = worker.name;
+                                }
+                              }
+                              
+                              // Proper name formatting
+                              return workerName.split(' ')
+                                .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+                                .join(' ');
+                            })()}
+                          </p>
+                          <div className="flex items-center space-x-1 mt-1">
+                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                            <span className="text-xs text-gray-600">Available</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Clean Options Section */}
+              <div className="space-y-4">
+                {/* Reason Input */}
+                <div className="space-y-2">
+                  <Label htmlFor="reschedule-reason" className="text-sm font-medium text-gray-900">
+                    Reason for Change <span className="text-gray-500 font-normal">(Optional)</span>
+                  </Label>
+                  <Input
+                    id="reschedule-reason"
+                    value={rescheduleReason}
+                    onChange={(e) => setRescheduleReason(e.target.value)}
+                    placeholder="e.g., Client request, scheduling conflict, emergency"
+                    className="bg-white border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                  />
                 </div>
 
-                {/* Additional Options */}
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="reschedule-reason">Reason (Optional)</Label>
-                    <Input
-                      id="reschedule-reason"
-                      value={rescheduleReason}
-                      onChange={(e) => setRescheduleReason(e.target.value)}
-                      placeholder="e.g., Client request, scheduling conflict"
-                    />
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      id="notify-client"
-                      checked={notifyClient}
-                      onCheckedChange={setNotifyClient}
-                    />
-                    <Label htmlFor="notify-client">Notify client of the change</Label>
+                {/* Client Notification */}
+                <div className="bg-white rounded-lg p-4 border border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <Switch
+                        id="notify-client"
+                        checked={notifyClient}
+                        onCheckedChange={setNotifyClient}
+                        className="data-[state=checked]:bg-blue-600 data-[state=unchecked]:bg-gray-200"
+                      />
+                      <div>
+                        <Label htmlFor="notify-client" className="text-sm font-medium text-gray-900">
+                          Notify client of the change
+                        </Label>
+                        <p className="text-xs text-gray-600 mt-0.5">
+                          Client will receive an email notification about the schedule change
+                        </p>
+                      </div>
+                    </div>
+                    {notifyClient && (
+                      <Badge variant="secondary" className="bg-blue-100 text-blue-700 text-xs">
+                        Recommended
+                      </Badge>
+                    )}
                   </div>
                 </div>
+              </div>
 
+              {/* Clean Action Button */}
+              <div className="pt-4">
                 <Button
                   onClick={executeReschedule}
                   disabled={isProcessing}
-                  className="w-full"
                   size="lg"
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3"
                 >
                   {isProcessing ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Processing...
-                    </>
+                    <div className="flex items-center space-x-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Processing Reschedule...</span>
+                    </div>
                   ) : (
-                    'Confirm & Reschedule'
+                    <div className="flex items-center space-x-2">
+                      <CheckCircle className="w-4 h-4" />
+                      <span>Confirm & Reschedule Appointment</span>
+                    </div>
                   )}
                 </Button>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           )}
 
-          {/* Navigation Buttons */}
-          <div className="flex justify-between pt-4 border-t">
-            <Button
-              variant="outline"
-              onClick={handleStepBack}
-              disabled={currentStep === 'select-time' || isProcessing}
-            >
-              Back
-            </Button>
-            <div className="flex space-x-2">
-              <Button variant="ghost" onClick={onClose} disabled={isProcessing}>
+                    {/* Clean Navigation Buttons */}
+          <div className="flex justify-between items-center pt-4 border-t border-gray-200">
+            <div className="flex items-center space-x-3">
+              <Button
+                variant="outline"
+                onClick={handleStepBack}
+                disabled={currentStep === 'select-time' || isProcessing}
+                className="px-4 py-2 border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                Back
+              </Button>
+            </div>
+            <div className="flex space-x-3">
+              <Button 
+                variant="ghost" 
+                onClick={onClose} 
+                disabled={isProcessing}
+                className="px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+              >
                 Cancel
               </Button>
               {currentStep !== 'confirm' && (
@@ -1016,19 +1561,21 @@ export function EnhancedRescheduleModal({
                     (currentStep === 'choose-worker' && !selectedWorkerId) ||
                     isCheckingAvailability
                   }
-                  className={
-                    currentStep === 'select-time' && workerAvailability.length > 0 && availableWorkers.length === 0
-                      ? 'opacity-50 cursor-not-allowed'
-                      : ''
-                  }
+                  className={cn(
+                    "px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium",
+                    (currentStep === 'select-time' && workerAvailability.length > 0 && availableWorkers.length === 0) && "opacity-50 cursor-not-allowed"
+                  )}
                 >
                   {isCheckingAvailability ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Checking...
-                    </>
+                    <div className="flex items-center space-x-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Checking...</span>
+                    </div>
                   ) : (
-                    'Next'
+                    <div className="flex items-center space-x-2">
+                      <span>Next</span>
+                      <ChevronRight className="w-4 h-4 ml-1" />
+                    </div>
                   )}
                 </Button>
               )}
